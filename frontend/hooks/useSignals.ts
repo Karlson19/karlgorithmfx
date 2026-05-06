@@ -26,6 +26,21 @@ export function useSignals() {
     }
   }, []);
 
+  const refresh = useCallback(async () => {
+    try {
+      setLoading(true);
+      // POST /refresh clears the cache and forces a full recalculation
+      const [sig, ind] = await Promise.all([api.refreshSignal(), api.getIndicators()]);
+      setSignal(sig);
+      setIndicators(ind);
+      setError(null);
+    } catch {
+      setError('Failed to refresh signals');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const fetchAnalysis = useCallback(async () => {
     try {
       setAnalysisLoading(true);
@@ -67,6 +82,6 @@ export function useSignals() {
   return {
     signal, indicators, analysis,
     loading, analysisLoading, error,
-    refresh: fetchAll, refreshAnalysis
+    refresh, refreshAnalysis
   };
 }
