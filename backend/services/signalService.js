@@ -1,6 +1,7 @@
 const indicatorService = require('./indicatorService');
 const priceService = require('./priceService');
 const cache = require('../utils/cache');
+const { saveSignal } = require('./signalHistoryService');
 
 // ─── Indicator Voting Engine ──────────────────────────────────────────────────
 
@@ -207,6 +208,8 @@ async function generateSignal() {
     };
 
     cache.set('current_signal', signal, 900);
+    // Persist to Supabase for performance tracking (fire-and-forget)
+    saveSignal(signal).catch(err => console.error('saveSignal error:', err.message));
     return signal;
   } catch (err) {
     console.error('Signal generation error:', err.message);

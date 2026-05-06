@@ -156,6 +156,40 @@ export interface AIAnalysis {
   model?: string;
 }
 
+export type SignalOutcome = 'WIN_TP1' | 'WIN_TP2' | 'LOSS' | 'EXPIRED';
+
+export interface StoredSignal {
+  id: string;
+  direction: SignalDirection;
+  entry: number;
+  stop_loss: number | null;
+  take_profit_1: number | null;
+  take_profit_2: number | null;
+  confidence: number;
+  strategy: string | null;
+  market_condition: MarketCondition | null;
+  timeframe: string;
+  risk_reward: string | null;
+  indicators_agreeing: number;
+  total_indicators: number;
+  outcome: SignalOutcome | null;
+  outcome_price: number | null;
+  outcome_at: string | null;
+  created_at: string;
+}
+
+export interface SignalStats {
+  total: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  avg_confidence: number;
+  win_confidence: number;
+  loss_confidence: number;
+  buy_win_rate: number;
+  sell_win_rate: number;
+}
+
 export type TradeDirection = 'BUY' | 'SELL';
 export type TradeStatus = 'open' | 'closed';
 

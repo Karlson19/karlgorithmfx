@@ -4,6 +4,7 @@ import SignalCard from '@/components/signals/SignalCard';
 import AIAnalysis from '@/components/signals/AIAnalysis';
 import IndicatorPanel from '@/components/signals/IndicatorPanel';
 import ConfidenceBar from '@/components/signals/ConfidenceBar';
+import SignalPerformance from '@/components/signals/SignalPerformance';
 import { useSignals } from '@/hooks/useSignals';
 import { RefreshCw } from 'lucide-react';
 
@@ -52,6 +53,9 @@ export default function SignalsPage() {
             loading={analysisLoading}
             onRefresh={refreshAnalysis}
           />
+
+          {/* Signal Performance */}
+          <SignalPerformance />
 
           {/* Indicators */}
           {indicators && <IndicatorPanel indicators={indicators} />}

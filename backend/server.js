@@ -14,6 +14,7 @@ const analysisRoutes = require('./routes/analysis');
 
 const priceService = require('./services/priceService');
 const signalService = require('./services/signalService');
+const signalHistoryService = require('./services/signalHistoryService');
 const websocketService = require('./services/websocketService');
 
 const app = express();
@@ -54,6 +55,15 @@ cron.schedule('*/15 * * * *', async () => {
     if (signal) websocketService.broadcast({ type: 'SIGNAL_UPDATE', data: signal });
   } catch (err) {
     console.error('Cron signal error:', err.message);
+  }
+});
+
+// Evaluate open signals every 30 minutes
+cron.schedule('*/30 * * * *', async () => {
+  try {
+    await signalHistoryService.evaluateOpenSignals();
+  } catch (err) {
+    console.error('Cron signal evaluation error:', err.message);
   }
 });
 

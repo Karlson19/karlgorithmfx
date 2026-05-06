@@ -36,6 +36,16 @@ const api = {
     return res.data;
   },
 
+  async getSignalHistory(limit = 50) {
+    const res = await axios.get(`${BASE_URL}/api/signals/history`, { params: { limit } });
+    return res.data;
+  },
+
+  async getSignalStats() {
+    const res = await axios.get(`${BASE_URL}/api/signals/stats`);
+    return res.data;
+  },
+
   async getAnalysis() {
     const res = await axios.get(`${BASE_URL}/api/analysis`);
     return res.data;
