@@ -48,10 +48,9 @@ export function usePrice() {
       }
     });
 
-    // Fallback polling every 30s if WS not connected
-    const interval = setInterval(() => {
-      if (!ws.isConnected) fetchPrice();
-    }, 30000);
+    // Poll every 2 minutes to match backend cron — guarantees updates
+    // even when Render drops the WebSocket connection on the free tier
+    const interval = setInterval(() => fetchPrice(), 120000);
 
     return () => {
       unsub();
