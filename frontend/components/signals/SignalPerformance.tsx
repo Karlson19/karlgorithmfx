@@ -61,8 +61,8 @@ export default function SignalPerformance() {
     async function load() {
       try {
         const [s, h] = await Promise.all([api.getSignalStats(), api.getSignalHistory(30)]);
-        setStats(s);
-        setHistory(h);
+        setStats(s && typeof s === 'object' ? s : null);
+        setHistory(Array.isArray(h) ? h : []);
       } catch (err) {
         console.error('SignalPerformance load error:', err);
       } finally {

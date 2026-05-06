@@ -1,5 +1,6 @@
 'use client';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import ErrorBoundary from '@/components/layout/ErrorBoundary';
 import SignalCard from '@/components/signals/SignalCard';
 import AIAnalysis from '@/components/signals/AIAnalysis';
 import IndicatorPanel from '@/components/signals/IndicatorPanel';
@@ -37,28 +38,42 @@ export default function SignalsPage() {
         <div className="space-y-4">
           {/* Signal + Confidence */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {signal && <SignalCard signal={signal} />}
             {signal && (
-              <ConfidenceBar
-                confidence={signal.confidence}
-                agreeing={signal.indicators_agreeing}
-                total={signal.total_indicators}
-              />
+              <ErrorBoundary>
+                <SignalCard signal={signal} />
+              </ErrorBoundary>
+            )}
+            {signal && (
+              <ErrorBoundary>
+                <ConfidenceBar
+                  confidence={signal.confidence}
+                  agreeing={signal.indicators_agreeing}
+                  total={signal.total_indicators}
+                />
+              </ErrorBoundary>
             )}
           </div>
 
           {/* AI Analysis */}
-          <AIAnalysis
-            analysis={analysis}
-            loading={analysisLoading}
-            onRefresh={refreshAnalysis}
-          />
+          <ErrorBoundary>
+            <AIAnalysis
+              analysis={analysis}
+              loading={analysisLoading}
+              onRefresh={refreshAnalysis}
+            />
+          </ErrorBoundary>
 
           {/* Signal Performance */}
-          <SignalPerformance />
+          <ErrorBoundary>
+            <SignalPerformance />
+          </ErrorBoundary>
 
           {/* Indicators */}
-          {indicators && <IndicatorPanel indicators={indicators} />}
+          {indicators && (
+            <ErrorBoundary>
+              <IndicatorPanel indicators={indicators} />
+            </ErrorBoundary>
+          )}
         </div>
       )}
     </DashboardLayout>
