@@ -4,85 +4,123 @@ const cache = require('../utils/cache');
 const { saveSignal } = require('./signalHistoryService');
 
 // ─── Indicator Voting Engine ──────────────────────────────────────────────────
+// Weighted votes determine direction + confidence.
+// The fixed 12-core set always gives a stable "X of 12" display count.
+
+const CORE_INDICATORS = [
+  'RSI', 'Williams %R', 'CCI', 'Stochastic',
+  'EMA20', 'EMA50', 'EMA200', 'MACD',
+  'Ichimoku', 'Bollinger', 'ADX Trend', 'Candle Patterns'
+];
 
 function voteIndicators(ind, price) {
   const votes = [];
 
-  // Momentum oscillators
-  if (ind.rsi.signal !== 'NEUTRAL')       votes.push({ dir: ind.rsi.signal,       weight: 1, name: 'RSI' });
-  if (ind.williamsR.signal !== 'NEUTRAL') votes.push({ dir: ind.williamsR.signal, weight: 1, name: 'Williams %R' });
-  if (ind.cci.signal !== 'NEUTRAL')       votes.push({ dir: ind.cci.signal,       weight: 1, name: 'CCI' });
-  if (ind.stochastic.signal !== 'NEUTRAL') votes.push({ dir: ind.stochastic.signal, weight: 1, name: 'Stochastic' });
+  // ── Momentum oscillators ──────────────────────────────────────────────────
+  if (ind.rsi.signal !== 'NEUTRAL')
+    votes.push({ dir: ind.rsi.signal, weight: 1, name: 'RSI' });
+  else
+    votes.push({ dir: 'NEUTRAL', weight: 0, name: 'RSI' });
 
-  // Trend indicators
-  votes.push({ dir: ind.ema20.signal,  weight: 1, name: 'EMA20' });
-  votes.push({ dir: ind.ema50.signal,  weight: 1, name: 'EMA50' });
-  if (ind.ema200.signal !== 'NEUTRAL') votes.push({ dir: ind.ema200.signal, weight: 1.5, name: 'EMA200' });
-  if (ind.macd.signal !== 'NEUTRAL')   votes.push({ dir: ind.macd.signal,  weight: 1, name: 'MACD' });
+  if (ind.williamsR.signal !== 'NEUTRAL')
+    votes.push({ dir: ind.williamsR.signal, weight: 1, name: 'Williams %R' });
+  else
+    votes.push({ dir: 'NEUTRAL', weight: 0, name: 'Williams %R' });
 
-  // Ichimoku (strong weight — complete system)
+  if (ind.cci.signal !== 'NEUTRAL')
+    votes.push({ dir: ind.cci.signal, weight: 1, name: 'CCI' });
+  else
+    votes.push({ dir: 'NEUTRAL', weight: 0, name: 'CCI' });
+
+  if (ind.stochastic.signal !== 'NEUTRAL')
+    votes.push({ dir: ind.stochastic.signal, weight: 1, name: 'Stochastic' });
+  else
+    votes.push({ dir: 'NEUTRAL', weight: 0, name: 'Stochastic' });
+
+  // ── Trend indicators ──────────────────────────────────────────────────────
+  votes.push({ dir: ind.ema20.signal,  weight: 1,   name: 'EMA20' });
+  votes.push({ dir: ind.ema50.signal,  weight: 1,   name: 'EMA50' });
+
+  if (ind.ema200.signal !== 'NEUTRAL')
+    votes.push({ dir: ind.ema200.signal, weight: 1.5, name: 'EMA200' });
+  else
+    votes.push({ dir: 'NEUTRAL', weight: 0, name: 'EMA200' });
+
+  if (ind.macd.signal !== 'NEUTRAL')
+    votes.push({ dir: ind.macd.signal, weight: 1, name: 'MACD' });
+  else
+    votes.push({ dir: 'NEUTRAL', weight: 0, name: 'MACD' });
+
+  // ── Ichimoku (strong weight — complete system) ─────────────────────────────
   if (ind.ichimoku.signal !== 'NEUTRAL') {
-    votes.push({ dir: ind.ichimoku.signal, weight: 2, name: 'Ichimoku' });
-    // Extra weight if price clearly above/below cloud
-    if (ind.ichimoku.cloud_position !== 'INSIDE') {
-      votes.push({ dir: ind.ichimoku.signal, weight: 1, name: 'Ichimoku Cloud' });
-    }
+    const ichWeight = ind.ichimoku.cloud_position !== 'INSIDE' ? 3 : 2;
+    votes.push({ dir: ind.ichimoku.signal, weight: ichWeight, name: 'Ichimoku' });
+  } else {
+    votes.push({ dir: 'NEUTRAL', weight: 0, name: 'Ichimoku' });
   }
 
-  // Bollinger Bands
-  if (ind.bollinger.signal !== 'NEUTRAL') votes.push({ dir: ind.bollinger.signal, weight: 1, name: 'Bollinger' });
+  // ── Bollinger Bands ───────────────────────────────────────────────────────
+  if (ind.bollinger.signal !== 'NEUTRAL')
+    votes.push({ dir: ind.bollinger.signal, weight: 1, name: 'Bollinger' });
+  else
+    votes.push({ dir: 'NEUTRAL', weight: 0, name: 'Bollinger' });
 
-  // ADX directional bias (only if trending)
+  // ── ADX directional bias ──────────────────────────────────────────────────
   if (ind.adx.trending) {
     const trendDir = price > ind.ema50.value ? 'BUY' : 'SELL';
     votes.push({ dir: trendDir, weight: ind.adx.strong ? 2 : 1, name: 'ADX Trend' });
+  } else {
+    votes.push({ dir: 'NEUTRAL', weight: 0, name: 'ADX Trend' });
   }
 
-  // Candlestick patterns (strong confirmation signal)
+  // ── Candlestick patterns ──────────────────────────────────────────────────
   if (ind.candlePatterns.signal !== 'NEUTRAL') {
-    const patternWeight = ind.candlePatterns.bullish.length + ind.candlePatterns.bearish.length;
-    votes.push({ dir: ind.candlePatterns.signal, weight: Math.min(patternWeight, 3), name: 'Candle Patterns' });
+    const patternWeight = Math.min(ind.candlePatterns.bullish.length + ind.candlePatterns.bearish.length, 3);
+    votes.push({ dir: ind.candlePatterns.signal, weight: patternWeight, name: 'Candle Patterns' });
+  } else {
+    votes.push({ dir: 'NEUTRAL', weight: 0, name: 'Candle Patterns' });
   }
 
-  // Support/Resistance proximity
+  // ── Bonus context signals (not in core 12, add weight only) ───────────────
   const { support, resistance } = ind.support_resistance;
-  if (support.length > 0 && Math.abs(price - support[0]) < 0.0020)    votes.push({ dir: 'BUY',  weight: 1.5, name: 'Near Support' });
-  if (resistance.length > 0 && Math.abs(price - resistance[0]) < 0.0020) votes.push({ dir: 'SELL', weight: 1.5, name: 'Near Resistance' });
+  if (support.length > 0 && Math.abs(price - support[0]) < 0.0020)
+    votes.push({ dir: 'BUY',  weight: 1.5, name: 'Near Support' });
+  if (resistance.length > 0 && Math.abs(price - resistance[0]) < 0.0020)
+    votes.push({ dir: 'SELL', weight: 1.5, name: 'Near Resistance' });
 
-  // Pivot Points proximity
   if (ind.pivot_points) {
     const pp = ind.pivot_points;
-    const levels = [
-      { val: pp.s1, dir: 'BUY', name: 'S1 Pivot' },
-      { val: pp.s2, dir: 'BUY', name: 'S2 Pivot' },
-      { val: pp.r1, dir: 'SELL', name: 'R1 Pivot' },
-      { val: pp.r2, dir: 'SELL', name: 'R2 Pivot' },
-    ];
-    for (const lvl of levels) {
-      if (Math.abs(price - lvl.val) < 0.0015) {
+    for (const lvl of [
+      { val: pp.s1, dir: 'BUY', name: 'S1 Pivot' }, { val: pp.s2, dir: 'BUY',  name: 'S2 Pivot' },
+      { val: pp.r1, dir: 'SELL', name: 'R1 Pivot' }, { val: pp.r2, dir: 'SELL', name: 'R2 Pivot' },
+    ]) {
+      if (Math.abs(price - lvl.val) < 0.0015)
         votes.push({ dir: lvl.dir, weight: 1.5, name: lvl.name });
-      }
     }
-    // Above/below pivot point itself
-    if (price > pp.pp) votes.push({ dir: 'BUY',  weight: 1, name: 'Above Daily PP' });
-    else               votes.push({ dir: 'SELL', weight: 1, name: 'Below Daily PP' });
+    votes.push({ dir: price > pp.pp ? 'BUY' : 'SELL', weight: 1, name: 'Daily PP' });
   }
 
-  // Tally weighted votes
-  const buyWeight  = votes.filter(v => v.dir === 'BUY').reduce((s, v) => s + v.weight, 0);
-  const sellWeight = votes.filter(v => v.dir === 'SELL').reduce((s, v) => s + v.weight, 0);
+  // ── Tally weighted votes (excluding NEUTRAL weight=0) ─────────────────────
+  const activeVotes = votes.filter(v => v.dir !== 'NEUTRAL');
+  const buyWeight   = activeVotes.filter(v => v.dir === 'BUY').reduce((s, v) => s + v.weight, 0);
+  const sellWeight  = activeVotes.filter(v => v.dir === 'SELL').reduce((s, v) => s + v.weight, 0);
   const totalWeight = buyWeight + sellWeight;
 
-  const direction = buyWeight >= sellWeight ? 'BUY' : 'SELL';
+  const direction   = buyWeight >= sellWeight ? 'BUY' : 'SELL';
   const agreedWeight = direction === 'BUY' ? buyWeight : sellWeight;
-  const confidence = totalWeight > 0 ? Math.round((agreedWeight / totalWeight) * 100) : 50;
-  const agreedNames = votes.filter(v => v.dir === direction).map(v => v.name);
+  const confidence  = totalWeight > 0 ? Math.round((agreedWeight / totalWeight) * 100) : 50;
+
+  // ── Fixed 12-indicator display count ─────────────────────────────────────
+  // Always "X of 12" so the user sees a stable, comparable number
+  const coreVotes = votes.filter(v => CORE_INDICATORS.includes(v.name));
+  const agreeingCore = coreVotes.filter(v => v.dir === direction);
+  const agreedNames  = votes.filter(v => v.dir === direction).map(v => v.name);
 
   return {
     direction,
     confidence,
-    agreeing: votes.filter(v => v.dir === direction).length,
-    total: votes.length,
+    agreeing: agreeingCore.length,
+    total: CORE_INDICATORS.length, // always 12
     agreeing_indicators: agreedNames
   };
 }
