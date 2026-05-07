@@ -67,9 +67,12 @@ export default function PriceDisplay() {
           </div>
 
           <div className="flex items-center gap-4 mt-4 text-sm font-mono text-text-secondary flex-wrap">
-            <div>Bid <span className="text-white">{formatPrice(price?.bid)}</span></div>
-            <div>Ask <span className="text-white">{formatPrice(price?.ask)}</span></div>
-            <div>Spread <span className="text-white">{price?.spread?.toFixed(1)}</span></div>
+            {/* Bid/ask/spread aren't available on the free Twelve Data tier.
+                We show "n/a" rather than a fabricated value so SL/TP logic
+                that consumes this UI never sees a fake spread. */}
+            <div>Bid <span className="text-white">{price?.bid != null ? formatPrice(price.bid) : 'n/a'}</span></div>
+            <div>Ask <span className="text-white">{price?.ask != null ? formatPrice(price.ask) : 'n/a'}</span></div>
+            <div>Spread <span className="text-white">{price?.spread_pips != null ? price.spread_pips.toFixed(1) : 'n/a'}</span></div>
             <div>H <span className="text-success">{formatPrice(price?.high)}</span></div>
             <div>L <span className="text-danger">{formatPrice(price?.low)}</span></div>
           </div>

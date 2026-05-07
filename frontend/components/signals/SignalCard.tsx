@@ -55,6 +55,12 @@ export default function SignalCard({ signal }: { signal: Signal }) {
             <p className="text-white text-sm font-mono">{signal.risk_reward}</p>
           </div>
         )}
+        {signal.session && (
+          <div>
+            <p className="text-text-secondary text-xs mb-1">Session</p>
+            <p className="text-white text-sm font-mono">{signal.session.replace(/_/g, ' ')}</p>
+          </div>
+        )}
       </div>
 
       {/* Confidence */}

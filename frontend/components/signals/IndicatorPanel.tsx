@@ -7,17 +7,31 @@ interface IndicatorPanelProps {
   indicators: Indicators;
 }
 
-function Row({ label, value, signal, desc }: { label: string; value: string; signal: string; desc?: string }) {
+// Format helpers that don't blow up on null. Indicators can now report
+// `available: false` (insufficient data, library error) — we display "—"
+// instead of crashing on .toFixed of null.
+const fix = (v: number | null | undefined, d = 2) =>
+  v == null || !isFinite(v) ? '—' : v.toFixed(d);
+
+function Row({
+  label, value, signal, desc, unavailable,
+}: {
+  label: string;
+  value: string;
+  signal: string;
+  desc?: string;
+  unavailable?: boolean;
+}) {
   return (
-    <div className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
+    <div className={cn('flex items-center justify-between py-2.5 border-b border-border last:border-0', unavailable && 'opacity-50')}>
       <div>
         <p className="text-white text-sm font-medium">{label}</p>
         {desc && <p className="text-text-secondary text-xs mt-0.5">{desc}</p>}
       </div>
       <div className="flex items-center gap-3 ml-4">
         <span className="text-white font-mono text-sm whitespace-nowrap">{value}</span>
-        <span className={cn('text-xs px-2 py-0.5 rounded border font-semibold w-16 text-center flex-shrink-0', getSignalBg(signal))}>
-          {signal}
+        <span className={cn('text-xs px-2 py-0.5 rounded border font-semibold w-16 text-center flex-shrink-0', getSignalBg(unavailable ? 'NEUTRAL' : signal))}>
+          {unavailable ? 'N/A' : signal}
         </span>
       </div>
     </div>
@@ -112,31 +126,120 @@ export default function IndicatorPanel({ indicators: ind }: IndicatorPanelProps)
         <h3 className="text-white font-bold mb-2">Technical Indicators</h3>
 
         <SectionTitle>Momentum</SectionTitle>
-        <Row label="RSI (14)" value={ind.rsi.value.toFixed(2)} signal={ind.rsi.signal} desc={ind.rsi.description} />
-        <Row label="Williams %R (14)" value={ind.williamsR.value.toFixed(2)} signal={ind.williamsR.signal} desc={ind.williamsR.description} />
-        <Row label="CCI (20)" value={ind.cci.value.toFixed(2)} signal={ind.cci.signal} desc={ind.cci.description} />
-        <Row label="Stochastic K/D" value={`${ind.stochastic.k.toFixed(1)} / ${ind.stochastic.d.toFixed(1)}`} signal={ind.stochastic.signal} />
+        <Row
+          label="RSI (14)"
+          value={fix(ind.rsi.value, 2)}
+          signal={ind.rsi.signal}
+          desc={ind.rsi.description}
+          unavailable={!ind.rsi.available}
+        />
+        <Row
+          label="Williams %R (14)"
+          value={fix(ind.williamsR.value, 2)}
+          signal={ind.williamsR.signal}
+          desc={ind.williamsR.description}
+          unavailable={!ind.williamsR.available}
+        />
+        <Row
+          label="CCI (20)"
+          value={fix(ind.cci.value, 2)}
+          signal={ind.cci.signal}
+          desc={ind.cci.description}
+          unavailable={!ind.cci.available}
+        />
+        <Row
+          label="Stochastic K/D"
+          value={`${fix(ind.stochastic.k, 1)} / ${fix(ind.stochastic.d, 1)}`}
+          signal={ind.stochastic.signal}
+          unavailable={!ind.stochastic.available}
+        />
 
         <SectionTitle>Trend</SectionTitle>
-        <Row label="MACD (12,26,9)" value={ind.macd.value.toFixed(6)} signal={ind.macd.signal} desc={`Histogram: ${ind.macd.histogram.toFixed(6)}`} />
-        <Row label="EMA 20" value={formatPrice(ind.ema20.value)} signal={ind.ema20.signal} />
-        <Row label="EMA 50" value={formatPrice(ind.ema50.value)} signal={ind.ema50.signal} />
-        <Row label="EMA 200" value={formatPrice(ind.ema200.value)} signal={ind.ema200.signal} />
-        <Row label="ADX (14)" value={ind.adx.value.toFixed(2)} signal={ind.adx.trending ? 'BUY' : 'NEUTRAL'} desc={ind.adx.trending ? `Trending${ind.adx.strong ? ' — Strong' : ''}` : 'No strong trend'} />
+        <Row
+          label="MACD (12,26,9)"
+          value={fix(ind.macd.value, 6)}
+          signal={ind.macd.signal}
+          desc={`Histogram: ${fix(ind.macd.histogram, 6)}`}
+          unavailable={!ind.macd.available}
+        />
+        <Row
+          label="EMA 20"
+          value={formatPrice(ind.ema20.value)}
+          signal={ind.ema20.signal}
+          unavailable={!ind.ema20.available}
+        />
+        <Row
+          label="EMA 50"
+          value={formatPrice(ind.ema50.value)}
+          signal={ind.ema50.signal}
+          unavailable={!ind.ema50.available}
+        />
+        <Row
+          label="EMA 200"
+          value={formatPrice(ind.ema200.value)}
+          signal={ind.ema200.signal}
+          unavailable={!ind.ema200.available}
+        />
+        <Row
+          label="ADX (14)"
+          value={fix(ind.adx.value, 2)}
+          signal={ind.adx.trending ? 'BUY' : 'NEUTRAL'}
+          desc={ind.adx.trending ? `Trending${ind.adx.strong ? ' — Strong' : ''}` : 'No strong trend'}
+          unavailable={!ind.adx.available}
+        />
 
         <SectionTitle>Ichimoku Cloud</SectionTitle>
-        <Row label="Signal" value={ind.ichimoku.cloud_position} signal={ind.ichimoku.signal} desc={ind.ichimoku.description} />
-        <Row label="Tenkan / Kijun" value={`${formatPrice(ind.ichimoku.tenkan)} / ${formatPrice(ind.ichimoku.kijun)}`} signal={ind.ichimoku.tenkan > ind.ichimoku.kijun ? 'BUY' : 'SELL'} />
-        <Row label="Span A / B" value={`${formatPrice(ind.ichimoku.span_a)} / ${formatPrice(ind.ichimoku.span_b)}`} signal={ind.ichimoku.span_a > ind.ichimoku.span_b ? 'BUY' : 'SELL'} />
+        <Row
+          label="Signal"
+          value={ind.ichimoku.cloud_position}
+          signal={ind.ichimoku.signal}
+          desc={ind.ichimoku.description}
+          unavailable={!ind.ichimoku.available}
+        />
+        <Row
+          label="Tenkan / Kijun"
+          value={`${formatPrice(ind.ichimoku.tenkan)} / ${formatPrice(ind.ichimoku.kijun)}`}
+          signal={
+            ind.ichimoku.available && ind.ichimoku.tenkan != null && ind.ichimoku.kijun != null
+              ? (ind.ichimoku.tenkan > ind.ichimoku.kijun ? 'BUY' : 'SELL')
+              : 'NEUTRAL'
+          }
+          unavailable={!ind.ichimoku.available}
+        />
+        <Row
+          label="Span A / B"
+          value={`${formatPrice(ind.ichimoku.span_a)} / ${formatPrice(ind.ichimoku.span_b)}`}
+          signal={
+            ind.ichimoku.available && ind.ichimoku.span_a != null && ind.ichimoku.span_b != null
+              ? (ind.ichimoku.span_a > ind.ichimoku.span_b ? 'BUY' : 'SELL')
+              : 'NEUTRAL'
+          }
+          unavailable={!ind.ichimoku.available}
+        />
 
         <SectionTitle>Volatility</SectionTitle>
         <Row
           label="Bollinger Bands"
           value={formatPrice(ind.bollinger.middle)}
           signal={ind.bollinger.signal}
-          desc={`${formatPrice(ind.bollinger.lower)} — ${formatPrice(ind.bollinger.upper)} · Width: ${(ind.bollinger.width * 10000).toFixed(1)} pips`}
+          desc={
+            ind.bollinger.available && ind.bollinger.lower != null && ind.bollinger.upper != null && ind.bollinger.width != null
+              ? `${formatPrice(ind.bollinger.lower)} — ${formatPrice(ind.bollinger.upper)} · Width: ${(ind.bollinger.width * 10000).toFixed(1)} pips`
+              : 'No data'
+          }
+          unavailable={!ind.bollinger.available}
         />
-        <Row label="ATR (14)" value={`${formatPrice(ind.atr.value)} (${ind.atr.pips} pips)`} signal="NEUTRAL" desc="Used for stop loss sizing" />
+        <Row
+          label="ATR (14)"
+          value={
+            ind.atr.available && ind.atr.value != null && ind.atr.pips != null
+              ? `${formatPrice(ind.atr.value)} (${ind.atr.pips} pips)`
+              : '—'
+          }
+          signal="NEUTRAL"
+          desc="Used for stop loss sizing"
+          unavailable={!ind.atr.available}
+        />
       </div>
 
       {/* ── Pivot Points ── */}

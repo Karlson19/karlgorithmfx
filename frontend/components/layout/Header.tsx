@@ -50,11 +50,11 @@ export default function Header({ onMenuClick }: HeaderProps) {
           )}
         </div>
 
-        {price && (
+        {price && price.bid != null && price.ask != null && (
           <div className="hidden sm:flex items-center gap-4 text-xs text-text-secondary font-mono">
             <span>Bid: <span className="text-white">{formatPrice(price.bid)}</span></span>
             <span>Ask: <span className="text-white">{formatPrice(price.ask)}</span></span>
-            <span>Spread: <span className="text-white">{price.spread?.toFixed(1)}</span></span>
+            <span>Spread: <span className="text-white">{price.spread_pips?.toFixed(1) ?? '—'}</span></span>
           </div>
         )}
       </div>

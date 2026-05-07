@@ -1,8 +1,12 @@
 export interface PriceData {
   price: number;
-  bid: number;
-  ask: number;
-  spread: number;
+  // Bid/ask are null on free data tiers (Twelve Data /quote doesn't expose
+  // them). UI should hide or label-as-unknown when null instead of inventing
+  // values.
+  bid: number | null;
+  ask: number | null;
+  spread_pips: number | null;
+  spread_estimated?: boolean;
   change: number;
   change_percent: number;
   open?: number;
@@ -36,21 +40,29 @@ export interface Signal {
   market_condition: MarketCondition;
   timeframe: string;
   risk_reward: string | null;
-  atr_pips?: number;
+  atr_pips?: number | null;
   mtf?: MTFResult;
+  session?: string;
   timestamp: string;
   indicators_agreeing: number;
   total_indicators: number;
   agreeing_indicators?: string[];
+  abstentions?: string[];
+  margin_ratio?: number;
 }
 
+// All indicator results now carry an `available` flag. When false, numeric
+// values are null and `signal` is 'NEUTRAL'. UIs should treat unavailable
+// indicators as "no data" instead of rendering a fake number.
 export interface IndicatorResult {
-  value: number;
+  available: boolean;
+  value: number | null;
   signal: 'BUY' | 'SELL' | 'NEUTRAL';
   description?: string;
 }
 
 export interface MACDResult {
+  available: boolean;
   value: number;
   signal: 'BUY' | 'SELL' | 'NEUTRAL';
   histogram: number;
@@ -58,22 +70,26 @@ export interface MACDResult {
 }
 
 export interface BollingerResult {
-  upper: number;
-  middle: number;
-  lower: number;
+  available: boolean;
+  upper: number | null;
+  middle: number | null;
+  lower: number | null;
   signal: 'BUY' | 'SELL' | 'NEUTRAL';
-  width: number;
+  width: number | null;
+  width_pct?: number | null;
 }
 
 export interface ADXResult {
-  value: number;
+  available: boolean;
+  value: number | null;
   trending: boolean;
   strong: boolean;
 }
 
 export interface StochasticResult {
-  k: number;
-  d: number;
+  available: boolean;
+  k: number | null;
+  d: number | null;
   signal: 'BUY' | 'SELL' | 'NEUTRAL';
 }
 
@@ -89,17 +105,19 @@ export interface SupportResistanceResult {
 }
 
 export interface ATRResult {
-  value: number;
-  pips: number;
+  available: boolean;
+  value: number | null;
+  pips: number | null;
 }
 
 export interface IchimokuResult {
-  tenkan: number;
-  kijun: number;
-  span_a: number;
-  span_b: number;
+  available: boolean;
+  tenkan: number | null;
+  kijun: number | null;
+  span_a: number | null;
+  span_b: number | null;
   signal: 'BUY' | 'SELL' | 'NEUTRAL';
-  cloud_position: 'ABOVE' | 'BELOW' | 'INSIDE';
+  cloud_position: 'ABOVE' | 'BELOW' | 'INSIDE' | 'UNKNOWN';
   description: string;
 }
 
@@ -114,6 +132,7 @@ export interface PivotPoints {
   pp: number;
   r1: number; r2: number; r3: number;
   s1: number; s2: number; s3: number;
+  basis?: string;
 }
 
 export interface MTFResult {
@@ -143,6 +162,8 @@ export interface Indicators {
   pivot_points: PivotPoints | null;
   market_condition: MarketCondition;
   mtf: MTFResult;
+  reference_price?: number;
+  candle_time?: number;
   timestamp: string;
 }
 

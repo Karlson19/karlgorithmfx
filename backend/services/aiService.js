@@ -1,8 +1,20 @@
 const cache = require('../utils/cache');
 
+// Safe formatter — indicators may now report `available: false` with null
+// numeric fields. We render "n/a" so the LLM doesn't see literal "null".
+const fmt = (v, d = 2) => (v == null || !isFinite(v) ? 'n/a' : Number(v).toFixed(d));
+const indLine = (label, ind, formatter) =>
+  ind && ind.available
+    ? `- ${label}: ${formatter(ind)}`
+    : `- ${label}: n/a (insufficient data)`;
+
 async function analyzeMarket(indicators, signal, priceData, news) {
   const cached = cache.get('ai_analysis');
   if (cached) return cached;
+
+  const abstentionsLine = signal.abstentions && signal.abstentions.length
+    ? `\n- Abstaining indicators (no clear reading): ${signal.abstentions.join(', ')}`
+    : '';
 
   const prompt = `You are an expert EUR/USD forex analyst. Analyze the following market data and provide a professional trading analysis.
 
@@ -12,32 +24,43 @@ CURRENT MARKET DATA:
 - Confidence: ${signal.confidence}%
 - Strategy: ${signal.strategy}
 - Market Condition: ${signal.market_condition}
+- Trading Session: ${signal.session || 'unknown'}${abstentionsLine}
 
-TECHNICAL INDICATORS:
-- RSI (14): ${indicators.rsi.value} → ${indicators.rsi.signal}
-- MACD: ${indicators.macd.value} → ${indicators.macd.signal}
-- EMA 20: ${indicators.ema20.value} → ${indicators.ema20.signal}
-- EMA 50: ${indicators.ema50.value} → ${indicators.ema50.signal}
-- EMA 200: ${indicators.ema200.value} → ${indicators.ema200.signal}
-- Bollinger Bands: Upper ${indicators.bollinger.upper}, Lower ${indicators.bollinger.lower}
-- ADX: ${indicators.adx.value} (${indicators.adx.trending ? 'Trending' : 'Not Trending'})
-- Stochastic: K=${indicators.stochastic.k}, D=${indicators.stochastic.d}
+TECHNICAL INDICATORS (only available indicators are listed):
+${indLine('RSI (14)',  indicators.rsi,       i => `${fmt(i.value)} → ${i.signal}`)}
+${indLine('MACD',      indicators.macd,      i => `${fmt(i.value, 6)} → ${i.signal} (hist ${fmt(i.histogram, 6)})`)}
+${indLine('EMA 20',    indicators.ema20,     i => `${fmt(i.value, 5)} → ${i.signal}`)}
+${indLine('EMA 50',    indicators.ema50,     i => `${fmt(i.value, 5)} → ${i.signal}`)}
+${indLine('EMA 200',   indicators.ema200,    i => `${fmt(i.value, 5)} → ${i.signal}`)}
+${indLine('Bollinger', indicators.bollinger, i => `Upper ${fmt(i.upper, 5)}, Lower ${fmt(i.lower, 5)} → ${i.signal}`)}
+${indLine('ADX (14)',  indicators.adx,       i => `${fmt(i.value)} (${i.trending ? 'Trending' : 'Not Trending'})`)}
+${indLine('Stochastic',indicators.stochastic,i => `K=${fmt(i.k, 1)}, D=${fmt(i.d, 1)} → ${i.signal}`)}
+${indLine('Williams %R', indicators.williamsR, i => `${fmt(i.value)} → ${i.signal}`)}
+${indLine('CCI (20)',  indicators.cci,       i => `${fmt(i.value)} → ${i.signal}`)}
+${indLine('Ichimoku',  indicators.ichimoku,  i => `${i.cloud_position} → ${i.signal}`)}
+${indLine('ATR (14)',  indicators.atr,       i => `${fmt(i.value, 5)} (${i.pips} pips)`)}
+
+MULTI-TIMEFRAME BIAS:
+- H4: ${indicators.mtf.h4_bias}
+- H1: ${indicators.mtf.h1_bias}
+- M15: ${indicators.mtf.m15_bias}
+- Aligned: ${indicators.mtf.aligned ? 'YES' : 'NO'}
 
 KEY LEVELS:
-- Resistance: ${(indicators.support_resistance.resistance || []).join(', ')}
-- Support: ${(indicators.support_resistance.support || []).join(', ')}
+- Resistance: ${(indicators.support_resistance.resistance || []).join(', ') || 'none detected'}
+- Support: ${(indicators.support_resistance.support || []).join(', ') || 'none detected'}
 - Fibonacci 50%: ${indicators.fibonacci.levels['50']}
 - Fibonacci 61.8%: ${indicators.fibonacci.levels['61.8']}
 
 SIGNAL DETAILS:
 - Entry: ${signal.entry}
-- Stop Loss: ${signal.stop_loss}
-- Take Profit 1: ${signal.take_profit_1}
-- Take Profit 2: ${signal.take_profit_2}
-- Risk/Reward: ${signal.risk_reward}
+- Stop Loss: ${signal.stop_loss ?? 'n/a'}
+- Take Profit 1: ${signal.take_profit_1 ?? 'n/a'}
+- Take Profit 2: ${signal.take_profit_2 ?? 'n/a'}
+- Risk/Reward: ${signal.risk_reward ?? 'n/a'}
 
 UPCOMING NEWS:
-${(news || []).slice(0, 3).map(n => `- ${n.title}: ${n.date} (${n.impact} impact)`).join('\n')}
+${(news || []).slice(0, 3).map(n => `- ${n.title}: ${n.date} (${n.impact} impact)`).join('\n') || '- None'}
 
 Provide a professional analysis in this exact JSON format:
 {

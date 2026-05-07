@@ -7,14 +7,18 @@ interface IndicatorRowProps {
   loading?: boolean;
 }
 
-function IndicatorCell({ label, value, signal }: { label: string; value: string; signal: string }) {
+// Null-safe formatter — indicator values can be null when `available: false`.
+const fix = (v: number | null | undefined, d: number) =>
+  v == null || !isFinite(v) ? '—' : v.toFixed(d);
+
+function IndicatorCell({ label, value, signal, unavailable }: { label: string; value: string; signal: string; unavailable?: boolean }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className={cn('flex flex-col gap-1', unavailable && 'opacity-50')}>
       <span className="text-text-secondary text-xs">{label}</span>
       <div className="flex items-center gap-2">
         <span className="text-white font-mono text-sm">{value}</span>
-        <span className={cn('text-xs px-1.5 py-0.5 rounded border font-semibold', getSignalBg(signal))}>
-          {signal}
+        <span className={cn('text-xs px-1.5 py-0.5 rounded border font-semibold', getSignalBg(unavailable ? 'NEUTRAL' : signal))}>
+          {unavailable ? 'N/A' : signal}
         </span>
       </div>
     </div>
@@ -36,11 +40,11 @@ export default function IndicatorRow({ indicators, loading }: IndicatorRowProps)
     <div className="bg-card border border-border rounded-xl p-4">
       <h3 className="text-text-secondary text-sm mb-3">Indicators</h3>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-        <IndicatorCell label="RSI (14)" value={indicators.rsi.value.toFixed(1)} signal={indicators.rsi.signal} />
-        <IndicatorCell label="MACD" value={indicators.macd.value.toFixed(5)} signal={indicators.macd.signal} />
-        <IndicatorCell label="EMA 20/50" value={`${indicators.ema20.value.toFixed(4)}`} signal={indicators.ema20.signal} />
-        <IndicatorCell label="ADX" value={indicators.adx.value.toFixed(1)} signal={indicators.adx.trending ? 'BUY' : 'NEUTRAL'} />
-        <IndicatorCell label="Bollinger" value={indicators.bollinger.middle.toFixed(4)} signal={indicators.bollinger.signal} />
+        <IndicatorCell label="RSI (14)"   value={fix(indicators.rsi.value, 1)}        signal={indicators.rsi.signal}   unavailable={!indicators.rsi.available} />
+        <IndicatorCell label="MACD"       value={fix(indicators.macd.value, 5)}       signal={indicators.macd.signal}  unavailable={!indicators.macd.available} />
+        <IndicatorCell label="EMA 20/50"  value={fix(indicators.ema20.value, 4)}      signal={indicators.ema20.signal} unavailable={!indicators.ema20.available} />
+        <IndicatorCell label="ADX"        value={fix(indicators.adx.value, 1)}        signal={indicators.adx.trending ? 'BUY' : 'NEUTRAL'} unavailable={!indicators.adx.available} />
+        <IndicatorCell label="Bollinger"  value={fix(indicators.bollinger.middle, 4)} signal={indicators.bollinger.signal} unavailable={!indicators.bollinger.available} />
       </div>
     </div>
   );
