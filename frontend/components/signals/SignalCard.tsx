@@ -1,11 +1,14 @@
 'use client';
+import { useState } from 'react';
 import { Signal } from '@/types';
 import { cn, getSignalBg } from '@/lib/utils';
 import { formatPairPrice } from '@/lib/pairs';
-import { TrendingUp, TrendingDown, Minus, Clock, ShieldAlert, Target, Check, X, Eye } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Clock, ShieldAlert, Target, Check, X, Eye, BookOpen } from 'lucide-react';
 import { format } from 'date-fns';
+import TradeForm from '@/components/journal/TradeForm';
 
 export default function SignalCard({ signal }: { signal: Signal }) {
+  const [showForm, setShowForm] = useState(false);
   const isNeutral = signal.direction === 'NEUTRAL';
   const isBuy = signal.direction === 'BUY';
   const sym = signal.symbol;
@@ -40,6 +43,26 @@ export default function SignalCard({ signal }: { signal: Signal }) {
             </p>
           </div>
         </div>
+      )}
+
+      {/* "Log this trade" CTA — opens the trade form pre-filled from this
+          signal (pair, direction, entry, SL, TP, strategy name, signal_id link). */}
+      {!isNeutral && (
+        <button
+          onClick={() => setShowForm(true)}
+          className="w-full mb-5 flex items-center justify-center gap-2 px-4 py-2.5 bg-success/10 border border-success/30 text-success hover:bg-success/20 rounded-lg font-bold text-sm transition-colors"
+        >
+          <BookOpen className="w-4 h-4" />
+          Log this trade in journal
+        </button>
+      )}
+
+      {showForm && (
+        <TradeForm
+          fromSignal={signal}
+          onClose={() => setShowForm(false)}
+          onSave={() => setShowForm(false)}
+        />
       )}
 
       {!isNeutral && (

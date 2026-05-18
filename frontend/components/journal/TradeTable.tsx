@@ -1,8 +1,9 @@
 'use client';
 import { Trade } from '@/types';
-import { cn, formatPrice, formatCurrency } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
+import { formatPairPrice, getPair } from '@/lib/pairs';
 import { format } from 'date-fns';
-import { Edit, Trash2, X } from 'lucide-react';
+import { Edit, Trash2, X, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import api from '@/lib/api';
 
@@ -52,16 +53,29 @@ export default function TradeTable({ trades, onRefresh, onEdit }: TradeTableProp
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
-              {['Date', 'Dir', 'Lots', 'Entry', 'SL/TP', 'Close', 'P&L', 'Strategy', 'Status', ''].map(h => (
+              {['Date', 'Pair', 'Dir', 'Lots', 'Entry', 'SL/TP', 'Close', 'P&L', 'Strategy', 'Status', ''].map(h => (
                 <th key={h} className="text-left text-text-secondary text-xs font-medium px-4 py-3 whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {trades.map(trade => (
+            {trades.map(trade => {
+              const sym = trade.pair;
+              const pair = getPair(sym);
+              return (
               <tr key={trade.id} className="border-b border-border hover:bg-white/2 transition-colors">
                 <td className="px-4 py-3 text-text-secondary text-xs whitespace-nowrap">
                   {format(new Date(trade.opened_at), 'MMM d, HH:mm')}
+                </td>
+                <td className="px-4 py-3 font-mono text-white text-xs whitespace-nowrap">
+                  <div className="flex items-center gap-1.5">
+                    <span>{pair.display_name}</span>
+                    {trade.signal_id && (
+                      <span title="Logged from a live signal" className="inline-flex">
+                        <Sparkles className="w-3 h-3 text-accent" />
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   <span className={cn('px-2 py-0.5 rounded text-xs font-bold border',
@@ -73,13 +87,13 @@ export default function TradeTable({ trades, onRefresh, onEdit }: TradeTableProp
                   </span>
                 </td>
                 <td className="px-4 py-3 font-mono text-white">{trade.lot_size}</td>
-                <td className="px-4 py-3 font-mono text-white">{formatPrice(trade.entry_price)}</td>
+                <td className="px-4 py-3 font-mono text-white">{formatPairPrice(sym, trade.entry_price)}</td>
                 <td className="px-4 py-3 font-mono text-xs">
-                  <span className="text-danger">{formatPrice(trade.stop_loss) || '—'}</span>
+                  <span className="text-danger">{trade.stop_loss != null ? formatPairPrice(sym, trade.stop_loss) : '—'}</span>
                   <span className="text-text-secondary mx-1">/</span>
-                  <span className="text-success">{formatPrice(trade.take_profit) || '—'}</span>
+                  <span className="text-success">{trade.take_profit != null ? formatPairPrice(sym, trade.take_profit) : '—'}</span>
                 </td>
-                <td className="px-4 py-3 font-mono text-white">{formatPrice(trade.close_price) || '—'}</td>
+                <td className="px-4 py-3 font-mono text-white">{trade.close_price != null ? formatPairPrice(sym, trade.close_price) : '—'}</td>
                 <td className="px-4 py-3 font-mono font-bold">
                   {trade.profit_loss != null ? (
                     <span className={trade.profit_loss >= 0 ? 'text-success' : 'text-danger'}>
@@ -134,7 +148,8 @@ export default function TradeTable({ trades, onRefresh, onEdit }: TradeTableProp
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

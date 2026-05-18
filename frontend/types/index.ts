@@ -299,6 +299,8 @@ export interface Trade {
   id: string;
   user_id: string;
   pair: string;
+  // When the trade was opened from a live engine signal, this links to it.
+  signal_id?: string | null;
   direction: TradeDirection;
   lot_size: number;
   entry_price: number;
@@ -326,6 +328,7 @@ export interface TradeStats {
   best_trade: number;
   worst_trade: number;
   current_streak: number;
+  per_pair?: Record<string, TradeStats>;
 }
 
 export type ImpactLevel = 'HIGH' | 'MEDIUM' | 'LOW';

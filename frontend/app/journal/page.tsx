@@ -47,7 +47,7 @@ export default function JournalPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-white text-2xl font-bold">Trade Journal</h1>
-          <p className="text-text-secondary text-sm">Track and analyze your EUR/USD trades</p>
+          <p className="text-text-secondary text-sm">Track and analyse trades across all pairs · Signal-linked trades marked with ✨</p>
         </div>
         <button
           onClick={() => { setEditingTrade(null); setShowForm(true); }}

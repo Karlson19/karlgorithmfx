@@ -19,6 +19,9 @@ async function saveSignal(signal) {
       take_profit_2: signal.take_profit_2,
       confidence: signal.confidence,
       strategy: signal.strategy,
+      // Persist the NAMED strategy that fired (single value, not the
+      // composite `strategy` text) so we can compute per-strategy win rates.
+      fired_strategy_name: signal.fired_strategy ? signal.fired_strategy.name : null,
       market_condition: signal.market_condition,
       timeframe: signal.timeframe || 'H1',
       risk_reward: signal.risk_reward,
