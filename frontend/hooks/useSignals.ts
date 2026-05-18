@@ -71,7 +71,7 @@ export function useSignals(symbol?: string) {
     fetchAnalysis();
 
     const ws = getWebSocketClient();
-    const unsub = ws.onMessage((msg) => {
+    const unsubMsg = ws.onMessage((msg) => {
       if (msg.type === 'SIGNAL_UPDATE') {
         const sig = msg.data as Signal;
         // Only adopt the broadcast if it's for the pair this hook is tracking
@@ -81,8 +81,10 @@ export function useSignals(symbol?: string) {
         }
       }
     });
+    // Backfill on WS reconnect — we may have missed updates while disconnected.
+    const unsubReconnect = ws.onReconnect(() => { fetchAll(); });
 
-    return () => unsub();
+    return () => { unsubMsg(); unsubReconnect(); };
   }, [fetchAll, fetchAnalysis, symbol]);
 
   return {
@@ -127,15 +129,17 @@ export function useAllSignals(intervalMs = 60_000) {
     fetchAll();
 
     const ws = getWebSocketClient();
-    const unsub = ws.onMessage((msg) => {
+    const unsubMsg = ws.onMessage((msg) => {
       if (msg.type === 'SIGNALS_ALL_UPDATE') {
         setData(msg.data as SignalsAllResponse);
       }
     });
+    const unsubReconnect = ws.onReconnect(() => { fetchAll(); });
 
     const interval = setInterval(fetchAll, intervalMs);
     return () => {
-      unsub();
+      unsubMsg();
+      unsubReconnect();
       clearInterval(interval);
     };
   }, [fetchAll, intervalMs]);

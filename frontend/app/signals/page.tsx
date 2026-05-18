@@ -10,6 +10,8 @@ import SignalPerformance from '@/components/signals/SignalPerformance';
 import PairSelector from '@/components/dashboard/PairSelector';
 import MultiPairOverview from '@/components/dashboard/MultiPairOverview';
 import MarketFocus from '@/components/dashboard/MarketFocus';
+import TradingChart from '@/components/dashboard/TradingChart';
+import CollapsibleSection from '@/components/layout/CollapsibleSection';
 import { useSignals } from '@/hooks/useSignals';
 import { PRIMARY_SYMBOL } from '@/lib/pairs';
 import { RefreshCw } from 'lucide-react';
@@ -60,6 +62,11 @@ export default function SignalsPage() {
           </div>
         ) : (
           <>
+            {/* Chart with live signal levels overlaid */}
+            <ErrorBoundary>
+              <TradingChart symbol={selectedPair} signal={signal} indicators={indicators} />
+            </ErrorBoundary>
+
             {/* Signal + Confidence */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {signal && (
@@ -78,25 +85,51 @@ export default function SignalsPage() {
               )}
             </div>
 
-            {/* AI Analysis */}
-            <ErrorBoundary>
-              <AIAnalysis
-                analysis={analysis}
-                loading={analysisLoading}
-                onRefresh={refreshAnalysis}
-              />
-            </ErrorBoundary>
+            {/* Heavier panels — collapsible so the page doesn't become a wall.
+                User's open/closed state persists per panel via localStorage. */}
+            <CollapsibleSection
+              title="AI Analysis"
+              subtitle="LLM-generated read of the current setup"
+              storageKey="signals-ai"
+              defaultOpen={true}
+            >
+              <div className="p-5">
+                <ErrorBoundary>
+                  <AIAnalysis
+                    analysis={analysis}
+                    loading={analysisLoading}
+                    onRefresh={refreshAnalysis}
+                  />
+                </ErrorBoundary>
+              </div>
+            </CollapsibleSection>
 
-            {/* Signal Performance */}
-            <ErrorBoundary>
-              <SignalPerformance />
-            </ErrorBoundary>
+            <CollapsibleSection
+              title="Signal Performance"
+              subtitle="Calibration data — historical win rates by pair and confidence band"
+              storageKey="signals-performance"
+              defaultOpen={false}
+            >
+              <div className="p-5">
+                <ErrorBoundary>
+                  <SignalPerformance />
+                </ErrorBoundary>
+              </div>
+            </CollapsibleSection>
 
-            {/* Indicators */}
             {indicators && (
-              <ErrorBoundary>
-                <IndicatorPanel indicators={indicators} />
-              </ErrorBoundary>
+              <CollapsibleSection
+                title="Indicator Detail"
+                subtitle="Every indicator, every value, every signal"
+                storageKey="signals-indicators"
+                defaultOpen={false}
+              >
+                <div className="p-5">
+                  <ErrorBoundary>
+                    <IndicatorPanel indicators={indicators} />
+                  </ErrorBoundary>
+                </div>
+              </CollapsibleSection>
             )}
           </>
         )}

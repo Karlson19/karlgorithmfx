@@ -2,10 +2,16 @@
 import { useEffect, useState } from 'react';
 import { TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
 import { usePrice } from '@/hooks/usePrice';
-import { cn, formatPrice, formatPercent } from '@/lib/utils';
+import { cn, formatPercent } from '@/lib/utils';
+import { formatPairPrice, getPair } from '@/lib/pairs';
 
-export default function PriceDisplay() {
-  const { price, loading, error, flash, refetch } = usePrice();
+interface PriceDisplayProps {
+  symbol?: string;
+}
+
+export default function PriceDisplay({ symbol }: PriceDisplayProps) {
+  const { price, loading, error, flash, refetch } = usePrice(symbol);
+  const pair = getPair(symbol || price?.symbol);
   const [secondsAgo, setSecondsAgo] = useState(0);
 
   // Tick every second to show how old the price is
@@ -36,7 +42,7 @@ export default function PriceDisplay() {
   return (
     <div className="bg-card border border-border rounded-xl p-6">
       <div className="flex items-start justify-between mb-1">
-        <span className="text-text-secondary text-sm font-medium">EUR/USD</span>
+        <span className="text-text-secondary text-sm font-medium">{pair.display_name}</span>
         <button onClick={refetch} title="Force refresh" className="text-text-secondary hover:text-white transition-colors">
           <RefreshCw className="w-4 h-4" />
         </button>
@@ -50,7 +56,7 @@ export default function PriceDisplay() {
             'font-mono text-5xl font-bold transition-colors duration-300 mb-2',
             flash === 'up' ? 'text-success' : flash === 'down' ? 'text-danger' : 'text-white'
           )}>
-            {formatPrice(price?.price)}
+            {formatPairPrice(symbol || price?.symbol, price?.price)}
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
@@ -70,11 +76,11 @@ export default function PriceDisplay() {
             {/* Bid/ask/spread aren't available on the free Twelve Data tier.
                 We show "n/a" rather than a fabricated value so SL/TP logic
                 that consumes this UI never sees a fake spread. */}
-            <div>Bid <span className="text-white">{price?.bid != null ? formatPrice(price.bid) : 'n/a'}</span></div>
-            <div>Ask <span className="text-white">{price?.ask != null ? formatPrice(price.ask) : 'n/a'}</span></div>
+            <div>Bid <span className="text-white">{price?.bid != null ? formatPairPrice(symbol, price.bid) : 'n/a'}</span></div>
+            <div>Ask <span className="text-white">{price?.ask != null ? formatPairPrice(symbol, price.ask) : 'n/a'}</span></div>
             <div>Spread <span className="text-white">{price?.spread_pips != null ? price.spread_pips.toFixed(1) : 'n/a'}</span></div>
-            <div>H <span className="text-success">{formatPrice(price?.high)}</span></div>
-            <div>L <span className="text-danger">{formatPrice(price?.low)}</span></div>
+            <div>H <span className="text-success">{formatPairPrice(symbol, price?.high)}</span></div>
+            <div>L <span className="text-danger">{formatPairPrice(symbol, price?.low)}</span></div>
           </div>
 
           {/* Freshness indicator */}
