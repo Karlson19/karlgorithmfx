@@ -1,6 +1,7 @@
 const cache = require('../utils/cache');
+const { getPair, PRIMARY_SYMBOL } = require('../config/pairs');
 
-// Safe formatter — indicators may now report `available: false` with null
+// Safe formatter — indicators may report `available: false` with null
 // numeric fields. We render "n/a" so the LLM doesn't see literal "null".
 const fmt = (v, d = 2) => (v == null || !isFinite(v) ? 'n/a' : Number(v).toFixed(d));
 const indLine = (label, ind, formatter) =>
@@ -8,37 +9,49 @@ const indLine = (label, ind, formatter) =>
     ? `- ${label}: ${formatter(ind)}`
     : `- ${label}: n/a (insufficient data)`;
 
-async function analyzeMarket(indicators, signal, priceData, news) {
-  const cached = cache.get('ai_analysis');
+async function analyzeMarket(indicators, signal, priceData, news, symbol = PRIMARY_SYMBOL) {
+  const sym = signal.symbol || symbol;
+  const pair = getPair(sym) || getPair(PRIMARY_SYMBOL);
+  const cacheKey = `ai_analysis_${sym}`;
+  const cached = cache.get(cacheKey);
   if (cached) return cached;
 
   const abstentionsLine = signal.abstentions && signal.abstentions.length
     ? `\n- Abstaining indicators (no clear reading): ${signal.abstentions.join(', ')}`
     : '';
+  const calLine = signal.calibration && signal.calibration.calibrated
+    ? `\n- Historical win rate for this confidence band on ${sym}: ${signal.calibration.win_rate}% (n=${signal.calibration.sample_size})`
+    : `\n- Confidence band on ${sym} is not yet calibrated (samples: ${signal.calibration ? signal.calibration.sample_size : 0})`;
+  const blackoutLine = signal.news_blackout
+    ? `\n- NEWS BLACKOUT ACTIVE: ${signal.news_blackout.title} (${signal.news_blackout.currency}) in ${signal.news_blackout.minutes} min — signal suppressed`
+    : '';
 
-  const prompt = `You are an expert EUR/USD forex analyst. Analyze the following market data and provide a professional trading analysis.
+  const digits = pair.digits;
+  const prompt = `You are an expert forex analyst. Analyse the following ${pair.display_name} market data and produce a professional trading analysis.
 
 CURRENT MARKET DATA:
-- EUR/USD Price: ${priceData.price}
+- Pair: ${pair.display_name}
+- Pair character: ${pair.description}
+- Price: ${priceData && priceData.price ? Number(priceData.price).toFixed(digits) : signal.entry}
 - Direction: ${signal.direction}
 - Confidence: ${signal.confidence}%
 - Strategy: ${signal.strategy}
 - Market Condition: ${signal.market_condition}
-- Trading Session: ${signal.session || 'unknown'}${abstentionsLine}
+- Trading Session: ${signal.session || 'unknown'}${abstentionsLine}${calLine}${blackoutLine}
 
-TECHNICAL INDICATORS (only available indicators are listed):
+TECHNICAL INDICATORS (only available ones listed):
 ${indLine('RSI (14)',  indicators.rsi,       i => `${fmt(i.value)} → ${i.signal}`)}
 ${indLine('MACD',      indicators.macd,      i => `${fmt(i.value, 6)} → ${i.signal} (hist ${fmt(i.histogram, 6)})`)}
-${indLine('EMA 20',    indicators.ema20,     i => `${fmt(i.value, 5)} → ${i.signal}`)}
-${indLine('EMA 50',    indicators.ema50,     i => `${fmt(i.value, 5)} → ${i.signal}`)}
-${indLine('EMA 200',   indicators.ema200,    i => `${fmt(i.value, 5)} → ${i.signal}`)}
-${indLine('Bollinger', indicators.bollinger, i => `Upper ${fmt(i.upper, 5)}, Lower ${fmt(i.lower, 5)} → ${i.signal}`)}
+${indLine('EMA 20',    indicators.ema20,     i => `${fmt(i.value, digits)} → ${i.signal}`)}
+${indLine('EMA 50',    indicators.ema50,     i => `${fmt(i.value, digits)} → ${i.signal}`)}
+${indLine('EMA 200',   indicators.ema200,    i => `${fmt(i.value, digits)} → ${i.signal}`)}
+${indLine('Bollinger', indicators.bollinger, i => `Upper ${fmt(i.upper, digits)}, Lower ${fmt(i.lower, digits)} → ${i.signal}`)}
 ${indLine('ADX (14)',  indicators.adx,       i => `${fmt(i.value)} (${i.trending ? 'Trending' : 'Not Trending'})`)}
 ${indLine('Stochastic',indicators.stochastic,i => `K=${fmt(i.k, 1)}, D=${fmt(i.d, 1)} → ${i.signal}`)}
 ${indLine('Williams %R', indicators.williamsR, i => `${fmt(i.value)} → ${i.signal}`)}
 ${indLine('CCI (20)',  indicators.cci,       i => `${fmt(i.value)} → ${i.signal}`)}
 ${indLine('Ichimoku',  indicators.ichimoku,  i => `${i.cloud_position} → ${i.signal}`)}
-${indLine('ATR (14)',  indicators.atr,       i => `${fmt(i.value, 5)} (${i.pips} pips)`)}
+${indLine('ATR (14)',  indicators.atr,       i => `${fmt(i.value, digits)} (${i.pips} pips)`)}
 
 MULTI-TIMEFRAME BIAS:
 - H4: ${indicators.mtf.h4_bias}
@@ -59,16 +72,20 @@ SIGNAL DETAILS:
 - Take Profit 2: ${signal.take_profit_2 ?? 'n/a'}
 - Risk/Reward: ${signal.risk_reward ?? 'n/a'}
 
-UPCOMING NEWS:
-${(news || []).slice(0, 3).map(n => `- ${n.title}: ${n.date} (${n.impact} impact)`).join('\n') || '- None'}
+UPCOMING NEWS (filter to ${pair.news_currencies.join('/')}):
+${(news || [])
+  .filter(n => pair.news_currencies.includes(n.currency))
+  .slice(0, 3)
+  .map(n => `- ${n.title}: ${n.date} (${n.impact} impact)`)
+  .join('\n') || '- None'}
 
 Provide a professional analysis in this exact JSON format:
 {
-  "summary": "2-3 sentence market summary",
-  "reasoning": "Detailed explanation of why this signal makes sense based on the indicators",
-  "risks": "Key risks to watch for this trade",
+  "summary": "2-3 sentence market summary for ${pair.display_name}",
+  "reasoning": "Detailed explanation of why this signal makes sense based on the indicators and regime",
+  "risks": "Key risks to watch — include news risk if relevant",
   "recommendation": "Specific actionable recommendation including lot size caution if news nearby",
-  "session_advice": "Advice based on current market session timing"
+  "session_advice": "Advice based on current market session timing for ${pair.display_name}"
 }
 
 Respond ONLY with the JSON object, no markdown, no extra text.`;
@@ -90,22 +107,19 @@ Respond ONLY with the JSON object, no markdown, no extra text.`;
     });
 
     const data = await response.json();
-
-    if (!data.choices || !data.choices[0]) {
-      throw new Error('No response from primary model');
-    }
+    if (!data.choices || !data.choices[0]) throw new Error('No response from primary model');
 
     const text = data.choices[0].message.content;
     const analysis = JSON.parse(text);
     analysis.generated_at = new Date().toISOString();
     analysis.model = 'claude-sonnet-4-5';
+    analysis.symbol = sym;
 
-    cache.set('ai_analysis', analysis, 900); // 15 min
+    cache.set(cacheKey, analysis, 900);
     return analysis;
   } catch (primaryErr) {
-    console.error('Primary AI model error:', primaryErr.message);
+    console.error(`[${sym}] Primary AI model error:`, primaryErr.message);
 
-    // Fallback to Llama
     try {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -129,26 +143,29 @@ Respond ONLY with the JSON object, no markdown, no extra text.`;
       const analysis = JSON.parse(jsonMatch[0]);
       analysis.generated_at = new Date().toISOString();
       analysis.model = 'llama-3.1-8b';
+      analysis.symbol = sym;
 
-      cache.set('ai_analysis', analysis, 900);
+      cache.set(cacheKey, analysis, 900);
       return analysis;
     } catch (fallbackErr) {
-      console.error('Fallback AI error:', fallbackErr.message);
+      console.error(`[${sym}] Fallback AI error:`, fallbackErr.message);
       return {
-        summary: `EUR/USD is currently trading at ${priceData.price} with a ${signal.direction} signal at ${signal.confidence}% confidence.`,
-        reasoning: `Based on ${signal.indicators_agreeing} of ${signal.total_indicators} indicators agreeing, the ${signal.strategy} strategy suggests a ${signal.direction} opportunity.`,
+        summary: `${pair.display_name} is currently trading at ${priceData && priceData.price ? Number(priceData.price).toFixed(digits) : signal.entry} with a ${signal.direction} signal at ${signal.confidence}% confidence.`,
+        reasoning: `Based on ${signal.indicators_agreeing} of ${signal.total_indicators} indicators agreeing in the ${signal.market_condition} regime, the ${signal.strategy} strategy suggests a ${signal.direction} opportunity on ${pair.display_name}.`,
         risks: 'Monitor upcoming economic news releases and manage position size carefully.',
         recommendation: `Consider a ${signal.direction} position with risk management. Risk/Reward: ${signal.risk_reward}.`,
-        session_advice: 'Best trading opportunities occur during London and New York session overlap (12:00-16:00 UTC).',
+        session_advice: `Best ${pair.display_name} opportunities occur during ${Object.entries(pair.session_weights).filter(([, w]) => w >= 0.9).map(([s]) => s).join(', ')}.`,
         generated_at: new Date().toISOString(),
-        model: 'fallback'
+        model: 'fallback',
+        symbol: sym,
       };
     }
   }
 }
 
-function invalidateCache() {
-  cache.del('ai_analysis');
+function invalidateCache(symbol = null) {
+  if (symbol) cache.del(`ai_analysis_${symbol}`);
+  else cache.del('ai_analysis'); // legacy
 }
 
 module.exports = { analyzeMarket, invalidateCache };

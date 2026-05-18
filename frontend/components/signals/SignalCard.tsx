@@ -1,18 +1,23 @@
 'use client';
 import { Signal } from '@/types';
-import { cn, formatPrice, getSignalBg } from '@/lib/utils';
-import { TrendingUp, TrendingDown, Minus, Clock } from 'lucide-react';
+import { cn, getSignalBg } from '@/lib/utils';
+import { formatPairPrice } from '@/lib/pairs';
+import { TrendingUp, TrendingDown, Minus, Clock, ShieldAlert, Target } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function SignalCard({ signal }: { signal: Signal }) {
   const isNeutral = signal.direction === 'NEUTRAL';
   const isBuy = signal.direction === 'BUY';
+  const sym = signal.symbol;
+  const cal = signal.calibration;
 
   return (
     <div className="bg-card border border-border rounded-xl p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-white text-lg font-bold mb-1">Current Signal</h2>
+          <h2 className="text-white text-lg font-bold mb-1">
+            Current Signal{signal.display_name ? ` · ${signal.display_name}` : ''}
+          </h2>
           <div className="flex items-center gap-2 text-text-secondary text-sm">
             <Clock className="w-4 h-4" />
             {format(new Date(signal.timestamp), 'MMM d, HH:mm')} UTC
@@ -24,13 +29,26 @@ export default function SignalCard({ signal }: { signal: Signal }) {
         </div>
       </div>
 
+      {/* News blackout banner — overrides everything else */}
+      {signal.news_blackout && (
+        <div className="mb-4 px-3 py-2.5 bg-yellow-400/10 border border-yellow-400/30 rounded-lg flex items-start gap-2">
+          <ShieldAlert className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+          <div className="text-xs">
+            <p className="text-yellow-400 font-semibold">News blackout active</p>
+            <p className="text-text-secondary mt-0.5">
+              {signal.news_blackout.title} ({signal.news_blackout.currency}) in {signal.news_blackout.minutes} min — signals suppressed during the window.
+            </p>
+          </div>
+        </div>
+      )}
+
       {!isNeutral && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Entry Price', value: formatPrice(signal.entry), color: 'text-white' },
-            { label: 'Stop Loss', value: formatPrice(signal.stop_loss), color: 'text-danger' },
-            { label: 'Take Profit 1', value: formatPrice(signal.take_profit_1), color: 'text-success' },
-            { label: 'Take Profit 2', value: formatPrice(signal.take_profit_2), color: 'text-success' }
+            { label: 'Entry Price', value: formatPairPrice(sym, signal.entry), color: 'text-white' },
+            { label: 'Stop Loss', value: formatPairPrice(sym, signal.stop_loss), color: 'text-danger' },
+            { label: 'Take Profit 1', value: formatPairPrice(sym, signal.take_profit_1), color: 'text-success' },
+            { label: 'Take Profit 2', value: formatPairPrice(sym, signal.take_profit_2), color: 'text-success' }
           ].map(item => (
             <div key={item.label} className="bg-background border border-border rounded-lg p-3">
               <p className="text-text-secondary text-xs mb-1">{item.label}</p>
@@ -62,6 +80,31 @@ export default function SignalCard({ signal }: { signal: Signal }) {
           </div>
         )}
       </div>
+
+      {/* Calibration callout — shows how trustworthy this confidence number is
+          based on our own historical win rate at this band for this pair. */}
+      {cal && (
+        <div className={cn(
+          'mb-4 px-3 py-2 rounded-lg border flex items-start gap-2 text-xs',
+          cal.calibrated
+            ? 'bg-accent/5 border-accent/20 text-text-secondary'
+            : 'bg-border/30 border-border text-text-secondary'
+        )}>
+          <Target className={cn('w-4 h-4 flex-shrink-0 mt-0.5', cal.calibrated ? 'text-accent' : 'text-text-secondary')} />
+          <div>
+            {cal.calibrated ? (
+              <>
+                <span className="text-white font-semibold">{cal.win_rate}% historical win rate</span>
+                {' '}in this confidence band on this pair ({cal.sample_size} closed signals)
+              </>
+            ) : (
+              <>
+                Confidence band not yet calibrated ({cal.sample_size} closed signals so far). Need ≥8 for trustable rate.
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Confidence */}
       <div>

@@ -1,4 +1,6 @@
 export interface PriceData {
+  symbol?: string;
+  display_name?: string;
   price: number;
   // Bid/ask are null on free data tiers (Twelve Data /quote doesn't expose
   // them). UI should hide or label-as-unknown when null instead of inventing
@@ -7,6 +9,7 @@ export interface PriceData {
   ask: number | null;
   spread_pips: number | null;
   spread_estimated?: boolean;
+  typical_spread?: number;
   change: number;
   change_percent: number;
   open?: number;
@@ -29,7 +32,22 @@ export interface Candle {
 export type SignalDirection = 'BUY' | 'SELL' | 'NEUTRAL';
 export type MarketCondition = 'TRENDING' | 'RANGING' | 'VOLATILE';
 
+export interface CalibrationInfo {
+  calibrated: boolean;
+  band: number;
+  sample_size: number;
+  win_rate?: number;
+}
+
+export interface NewsBlackoutInfo {
+  title: string;
+  currency: string;
+  minutes: number;
+}
+
 export interface Signal {
+  symbol?: string;
+  display_name?: string;
   direction: SignalDirection;
   entry: number;
   stop_loss: number | null;
@@ -43,12 +61,23 @@ export interface Signal {
   atr_pips?: number | null;
   mtf?: MTFResult;
   session?: string;
+  news_blackout?: NewsBlackoutInfo | null;
+  calibration?: CalibrationInfo;
   timestamp: string;
   indicators_agreeing: number;
   total_indicators: number;
   agreeing_indicators?: string[];
   abstentions?: string[];
   margin_ratio?: number;
+  opportunity_score?: number;
+}
+
+export interface SignalsAllResponse {
+  signals: Record<string, Signal>;
+  ranked: Signal[];
+  errors: Record<string, string>;
+  generated_at: string;
+  best_opportunity: Signal | null;
 }
 
 // All indicator results now carry an `available` flag. When false, numeric
@@ -181,6 +210,7 @@ export type SignalOutcome = 'WIN_TP1' | 'WIN_TP2' | 'LOSS' | 'EXPIRED';
 
 export interface StoredSignal {
   id: string;
+  symbol?: string;
   direction: SignalDirection;
   entry: number;
   stop_loss: number | null;
@@ -209,6 +239,7 @@ export interface SignalStats {
   loss_confidence: number;
   buy_win_rate: number;
   sell_win_rate: number;
+  per_pair?: Record<string, SignalStats>;
 }
 
 export type TradeDirection = 'BUY' | 'SELL';
@@ -274,6 +305,6 @@ export interface SessionInfo {
 }
 
 export interface WSMessage {
-  type: 'PRICE_UPDATE' | 'SIGNAL_UPDATE' | 'SESSION_UPDATE' | 'PONG';
-  data: PriceData | Signal | SessionInfo;
+  type: 'PRICE_UPDATE' | 'SIGNAL_UPDATE' | 'SIGNALS_ALL_UPDATE' | 'SESSION_UPDATE' | 'PONG';
+  data: PriceData | Signal | SignalsAllResponse | SessionInfo;
 }
