@@ -1,5 +1,6 @@
 const axios = require('axios');
 const cache = require('../utils/cache');
+const quota = require('../utils/quotaTracker');
 const { PRIMARY_SYMBOL, getPair, isSupported } = require('../config/pairs');
 
 const TWELVE_DATA_BASE   = 'https://api.twelvedata.com';
@@ -104,6 +105,7 @@ async function fetchLivePrice(symbol = PRIMARY_SYMBOL) {
 
   try {
     const data = await withRetry(async () => {
+      quota.recordCall('twelve_data');
       const res = await axios.get(`${TWELVE_DATA_BASE}/quote`, {
         params: { symbol: sym, apikey: process.env.TWELVE_DATA_API_KEY },
         timeout: 8000,
@@ -156,15 +158,18 @@ async function fetchFromAlphaVantage(symbol) {
     return null;
   }
   try {
-    const res = await withRetry(() => axios.get(ALPHA_VANTAGE_BASE, {
-      params: {
-        function: 'CURRENCY_EXCHANGE_RATE',
-        from_currency: from,
-        to_currency:   to,
-        apikey: process.env.ALPHA_VANTAGE_API_KEY,
-      },
-      timeout: 8000,
-    }));
+    const res = await withRetry(() => {
+      quota.recordCall('alpha_vantage');
+      return axios.get(ALPHA_VANTAGE_BASE, {
+        params: {
+          function: 'CURRENCY_EXCHANGE_RATE',
+          from_currency: from,
+          to_currency:   to,
+          apikey: process.env.ALPHA_VANTAGE_API_KEY,
+        },
+        timeout: 8000,
+      });
+    });
 
     const data = res.data && res.data['Realtime Currency Exchange Rate'];
     if (!data) throw new Error('Alpha Vantage rate limit or empty payload');
@@ -209,6 +214,7 @@ async function fetchHistoricalData(interval = '1h', outputsize = 200, symbol = P
 
   try {
     const data = await withRetry(async () => {
+      quota.recordCall('twelve_data');
       const res = await axios.get(`${TWELVE_DATA_BASE}/time_series`, {
         params: {
           symbol: sym,

@@ -8,6 +8,7 @@ import {
   getPair, PAIRS, ENABLED_SYMBOLS, PRIMARY_SYMBOL,
   pipsBetween, recommendedLotSize, pnlUsd,
 } from '@/lib/pairs';
+import { useUserPrefs } from '@/hooks/useUserPrefs';
 
 const STRATEGIES = [
   'EMA Pullback', 'Asian Range Breakout', 'Bollinger Squeeze Breakout',
@@ -45,8 +46,9 @@ interface TradeFormProps {
   defaultAccountBalance?: number;
 }
 
-export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultAccountBalance = 10000 }: TradeFormProps) {
-  const [pair, setPair] = useState<string>(PRIMARY_SYMBOL);
+export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultAccountBalance }: TradeFormProps) {
+  const [prefs] = useUserPrefs();
+  const [pair, setPair] = useState<string>(prefs.default_symbol || PRIMARY_SYMBOL);
   const [direction, setDirection] = useState<TradeDirection>('BUY');
   const [status, setStatus] = useState<'open' | 'closed'>('open');
   const [lotSize, setLotSize] = useState('0.01');
@@ -60,9 +62,10 @@ export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultA
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  // For the lot-size suggestion widget
-  const [accountBal, setAccountBal] = useState(defaultAccountBalance);
-  const [riskPct, setRiskPct] = useState(1);
+  // For the lot-size suggestion widget — defaults pull from user prefs
+  // (Settings page) and the optional defaultAccountBalance prop wins if passed.
+  const [accountBal, setAccountBal] = useState(defaultAccountBalance ?? prefs.account_balance);
+  const [riskPct, setRiskPct] = useState(prefs.default_risk_pct);
 
   const pairMeta = getPair(pair);
 

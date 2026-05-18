@@ -34,6 +34,12 @@ export const PAIRS: Record<string, PairMeta> = {
     pip_value_per_std_lot_usd: 6.7, contract_size: 100000,
     description: 'Yen pair. Asian-session active.',
   },
+  'AUD/USD': {
+    symbol: 'AUD/USD', display_name: 'AUD/USD',
+    pip_size: 0.0001, digits: 5,
+    pip_value_per_std_lot_usd: 10, contract_size: 100000,
+    description: 'Commodity currency. Risk-on/off sensitive.',
+  },
   'XAU/USD': {
     symbol: 'XAU/USD', display_name: 'Gold (XAU/USD)',
     pip_size: 0.1, digits: 2,

@@ -79,12 +79,25 @@ export function useSignals(symbol?: string) {
         if (!symbol || !sig.symbol || sig.symbol === symbol) {
           setSignal(sig);
         }
+      } else if (msg.type === 'SIGNALS_ALL_UPDATE') {
+        // The cron broadcasts SIGNALS_ALL_UPDATE for every cycle. Extract the
+        // signal for our active pair so non-primary pairs update too —
+        // previously only EUR/USD ever updated via WebSocket because the
+        // cron only broadcast SIGNAL_UPDATE for the primary symbol.
+        const all = msg.data as { signals?: Record<string, Signal> };
+        const wanted = symbol || 'EUR/USD';
+        const fresh = all.signals && all.signals[wanted];
+        if (fresh) setSignal(fresh);
       }
     });
     // Backfill on WS reconnect — we may have missed updates while disconnected.
     const unsubReconnect = ws.onReconnect(() => { fetchAll(); });
 
-    return () => { unsubMsg(); unsubReconnect(); };
+    // Safety-net polling: even with WS, refetch every 5 minutes so a stale
+    // tab catches up if it missed a broadcast.
+    const pollId = setInterval(fetchAll, 5 * 60 * 1000);
+
+    return () => { unsubMsg(); unsubReconnect(); clearInterval(pollId); };
   }, [fetchAll, fetchAnalysis, symbol]);
 
   return {

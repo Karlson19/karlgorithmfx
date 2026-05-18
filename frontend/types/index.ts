@@ -361,3 +361,33 @@ export interface WSMessage {
   type: 'PRICE_UPDATE' | 'SIGNAL_UPDATE' | 'SIGNALS_ALL_UPDATE' | 'SESSION_UPDATE' | 'PONG';
   data: PriceData | Signal | SignalsAllResponse | SessionInfo;
 }
+
+// ─── Health ──────────────────────────────────────────────────────────────────
+export interface ProviderUsage {
+  provider: string;
+  name: string;
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+  ratio: number;
+  status: 'ok' | 'soft_throttle' | 'hard_throttle' | 'exhausted' | 'unlimited';
+}
+
+export interface SignalHealth {
+  symbol: string;
+  status: 'fresh' | 'aging' | 'stale' | 'never_generated';
+  age_minutes: number | null;
+  direction?: SignalDirection;
+  confidence?: number;
+}
+
+export interface SystemHealth {
+  status: 'ok' | 'degraded' | 'critical';
+  reasons: string[];
+  timestamp: string;
+  uptime_seconds: number;
+  providers: ProviderUsage[];
+  signals: SignalHealth[];
+  calibration_samples: Record<string, number>;
+  pairs_enabled: string[];
+}

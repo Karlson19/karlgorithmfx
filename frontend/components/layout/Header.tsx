@@ -4,6 +4,7 @@ import { usePrice } from '@/hooks/usePrice';
 import { cn, formatPrice } from '@/lib/utils';
 import { getWebSocketClient } from '@/lib/websocket';
 import { useEffect, useState } from 'react';
+import SystemStatus from './SystemStatus';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -58,6 +59,9 @@ export default function Header({ onMenuClick }: HeaderProps) {
           </div>
         )}
       </div>
+
+      {/* System status — green/yellow/red dot, click for details */}
+      <SystemStatus />
 
       {/* WS indicator */}
       <div className="flex items-center gap-1.5 text-xs text-text-secondary">

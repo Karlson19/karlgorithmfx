@@ -7,6 +7,7 @@ import AIAnalysis from '@/components/signals/AIAnalysis';
 import IndicatorPanel from '@/components/signals/IndicatorPanel';
 import ConfidenceBar from '@/components/signals/ConfidenceBar';
 import SignalPerformance from '@/components/signals/SignalPerformance';
+import StrategyPerformance from '@/components/signals/StrategyPerformance';
 import PairSelector from '@/components/dashboard/PairSelector';
 import MultiPairOverview from '@/components/dashboard/MultiPairOverview';
 import MarketFocus from '@/components/dashboard/MarketFocus';
@@ -100,6 +101,19 @@ export default function SignalsPage() {
                     loading={analysisLoading}
                     onRefresh={refreshAnalysis}
                   />
+                </ErrorBoundary>
+              </div>
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              title="Strategy Performance"
+              subtitle="Per-strategy win rates from your actual signal history"
+              storageKey="signals-strategy-perf"
+              defaultOpen={false}
+            >
+              <div className="p-5">
+                <ErrorBoundary>
+                  <StrategyPerformance />
                 </ErrorBoundary>
               </div>
             </CollapsibleSection>

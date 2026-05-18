@@ -236,76 +236,65 @@ export default function TradingChart({ symbol = PRIMARY_SYMBOL, signal, indicato
     return () => clearInterval(id);
   }, [timeframe, loadData]);
 
-  // ── Signal-level price lines (entry / SL / TP1 / TP2) ─────────────────────
-  // Rebuild any time the signal payload changes. Lines are drawn on the
-  // candle series so they sit at the right price scale.
+  // ── Price lines (signal levels + S/R/pivots) ─────────────────────────────
+  // SINGLE effect that rebuilds ALL horizontal price lines together.
+  // Previously two effects fought each other: signal-effect cleared every
+  // line and added signal lines; S/R-effect appended without clearing.
+  // Result: when only the signal changed, S/R lines vanished; when only
+  // indicators changed, S/R lines piled on top of each other.
+  // Now we re-build everything atomically.
   useEffect(() => {
     const series = candleRef.current;
     if (!series) return;
     priceLineRefs.current.forEach(l => series.removePriceLine(l));
     priceLineRefs.current = [];
 
-    if (!signal || signal.direction === 'NEUTRAL') return;
-    // Only show lines for the matching symbol
-    if (signal.symbol && signal.symbol !== symbol) return;
-
-    const lines = [
-      { price: signal.entry,         color: '#ffffff', title: `Entry ${signal.direction}`, style: LineStyle.Solid,  width: 2 as const },
-      { price: signal.stop_loss,     color: '#ef4444', title: 'SL',  style: LineStyle.Dashed, width: 1 as const },
-      { price: signal.take_profit_1, color: '#22c55e', title: 'TP1', style: LineStyle.Dashed, width: 1 as const },
-      { price: signal.take_profit_2, color: '#22c55e', title: 'TP2', style: LineStyle.Dotted, width: 1 as const },
-    ].filter(l => l.price != null && isFinite(l.price as number));
-
-    for (const l of lines) {
+    // 1) Signal levels (only for the matching symbol)
+    const signalLines: Array<{ price: number; color: string; title: string; style: LineStyle; width: 1 | 2 }> = [];
+    if (signal && signal.direction !== 'NEUTRAL' && (!signal.symbol || signal.symbol === symbol)) {
+      const candidates = [
+        { price: signal.entry,         color: '#ffffff', title: `Entry ${signal.direction}`, style: LineStyle.Solid,  width: 2 as 1 | 2 },
+        { price: signal.stop_loss,     color: '#ef4444', title: 'SL',  style: LineStyle.Dashed, width: 1 as 1 | 2 },
+        { price: signal.take_profit_1, color: '#22c55e', title: 'TP1', style: LineStyle.Dashed, width: 1 as 1 | 2 },
+        { price: signal.take_profit_2, color: '#22c55e', title: 'TP2', style: LineStyle.Dotted, width: 1 as 1 | 2 },
+      ];
+      for (const c of candidates) {
+        if (c.price != null && isFinite(c.price as number)) signalLines.push(c as { price: number; color: string; title: string; style: LineStyle; width: 1 | 2 });
+      }
+    }
+    for (const l of signalLines) {
       const line = series.createPriceLine({
-        price: l.price as number,
-        color: l.color,
-        lineWidth: l.width,
-        lineStyle: l.style,
-        axisLabelVisible: true,
-        title: l.title,
+        price: l.price, color: l.color, lineWidth: l.width, lineStyle: l.style,
+        axisLabelVisible: true, title: l.title,
       });
       priceLineRefs.current.push(line);
     }
-  }, [signal, symbol]);
 
-  // ── S/R + pivot reference lines ───────────────────────────────────────────
-  // Faint horizontal lines so the trader can see where the engine thinks
-  // the market will react. Rebuilt when indicators change.
-  useEffect(() => {
-    const series = candleRef.current;
-    if (!series || !indicators) return;
-    // Clear (signal lines re-added above, so we only add S/R lines here)
-    // Use a separate ref bucket isn't strictly needed — when the signal
-    // effect runs it already clears ALL price lines, so we just append.
-    const sr = indicators.support_resistance;
-    const lines: { price: number; color: string; title: string; style: LineStyle }[] = [];
-    (sr.resistance || []).slice(0, 2).forEach((r, i) => {
-      lines.push({ price: r, color: '#ef4444', title: `R${i + 1}`, style: LineStyle.Dotted });
-    });
-    (sr.support || []).slice(0, 2).forEach((s, i) => {
-      lines.push({ price: s, color: '#22c55e', title: `S${i + 1}`, style: LineStyle.Dotted });
-    });
-    if (indicators.pivot_points) {
-      const pp = indicators.pivot_points;
-      lines.push({ price: pp.pp, color: '#6366f1', title: 'PP', style: LineStyle.Dashed });
-      lines.push({ price: pp.r1, color: '#ef4444', title: 'R1', style: LineStyle.Dotted });
-      lines.push({ price: pp.s1, color: '#22c55e', title: 'S1', style: LineStyle.Dotted });
-    }
-    for (const l of lines) {
-      const line = series.createPriceLine({
-        price: l.price,
-        color: l.color,
-        lineWidth: 1,
-        lineStyle: l.style,
-        axisLabelVisible: false,
-        title: l.title,
+    // 2) S/R + pivot reference lines
+    if (indicators) {
+      const refLines: Array<{ price: number; color: string; title: string; style: LineStyle }> = [];
+      const sr = indicators.support_resistance;
+      (sr?.resistance || []).slice(0, 2).forEach((r, i) => {
+        refLines.push({ price: r, color: '#ef4444', title: `R${i + 1}`, style: LineStyle.Dotted });
       });
-      priceLineRefs.current.push(line);
+      (sr?.support || []).slice(0, 2).forEach((s, i) => {
+        refLines.push({ price: s, color: '#22c55e', title: `S${i + 1}`, style: LineStyle.Dotted });
+      });
+      if (indicators.pivot_points) {
+        const pp = indicators.pivot_points;
+        refLines.push({ price: pp.pp, color: '#6366f1', title: 'PP', style: LineStyle.Dashed });
+        refLines.push({ price: pp.r1, color: '#ef4444', title: 'R1', style: LineStyle.Dotted });
+        refLines.push({ price: pp.s1, color: '#22c55e', title: 'S1', style: LineStyle.Dotted });
+      }
+      for (const l of refLines) {
+        const line = series.createPriceLine({
+          price: l.price, color: l.color, lineWidth: 1, lineStyle: l.style,
+          axisLabelVisible: false, title: l.title,
+        });
+        priceLineRefs.current.push(line);
+      }
     }
-    // Note: when signal-effect rebuilds, these get cleared too. That's fine —
-    // both effects run on render so the chart stays consistent.
-  }, [indicators]);
+  }, [signal, indicators, symbol]);
 
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden">

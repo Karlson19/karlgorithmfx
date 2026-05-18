@@ -12,6 +12,7 @@ const journalRoutes = require('./routes/journal');
 const newsRoutes = require('./routes/news');
 const analysisRoutes = require('./routes/analysis');
 const marketRoutes = require('./routes/market');
+const healthRoutes = require('./routes/health');
 
 const priceService = require('./services/priceService');
 const signalsOrchestrator = require('./services/signalsOrchestrator');
@@ -37,26 +38,26 @@ app.use('/api/journal', journalRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/analysis', analysisRoutes);
 app.use('/api/market', marketRoutes);
+app.use('/api/health', healthRoutes);
 
-app.get('/health', (req, res) => res.json({
-  status: 'ok',
-  pairs: listEnabledSymbols(),
-}));
+// Legacy short health check — kept for any external pingers expecting it.
+app.get('/health', (req, res) => res.json({ status: 'ok', pairs: listEnabledSymbols() }));
 
 websocketService.init(server);
 
 // ── Cron schedule (API-budget aware) ──────────────────────────────────────────
 // Twelve Data free tier: 800 req/day, 8 req/min.
-// Budget per H1 cycle for 4 pairs:
-//   H1 candles (×4) + H4 (×4) + M15 (×4) + 1day (×4) = 16 calls
-//   × 24 H1 cycles/day = 384/day
+// Budget per H1 cycle for 5 pairs (EUR/USD, GBP/USD, USD/JPY, AUD/USD, XAU/USD):
+//   H1 candles + H4 + M15 + 1day per pair = 4 calls × 5 pairs = 20 calls
+//   × 24 H1 cycles/day = 480/day
 //   + live price (1 pair every 5 min) = 288/day
-//   = ~672/day — fits within 800.
+//   = ~768/day — fits within 800 with ~30 call headroom.
 
-// Price ticker: only for PRIMARY_SYMBOL every 2 min (the UI default view).
+// Price ticker: only for PRIMARY_SYMBOL every 5 min. Reduced from 2 min
+// when we added the 5th pair (AUD/USD) so we stay under the daily cap.
 // Multi-pair live prices are fetched on-demand from the frontend when the
 // user opens the overview.
-cron.schedule('*/2 * * * *', async () => {
+cron.schedule('*/5 * * * *', async () => {
   try {
     const price = await priceService.fetchLivePrice(PRIMARY_SYMBOL);
     if (price) websocketService.broadcast({ type: 'PRICE_UPDATE', data: price });

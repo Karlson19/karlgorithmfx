@@ -4,8 +4,9 @@ import { Calculator, AlertTriangle } from 'lucide-react';
 import PairSelector from '@/components/dashboard/PairSelector';
 import { Signal } from '@/types';
 import {
-  getPair, recommendedLotSize, pipValueUsd, PRIMARY_SYMBOL, pipsBetween,
+  getPair, recommendedLotSize, pipValueUsd, pipsBetween,
 } from '@/lib/pairs';
+import { useUserPrefs } from '@/hooks/useUserPrefs';
 import { cn } from '@/lib/utils';
 
 interface RiskCalculatorProps {
@@ -21,10 +22,17 @@ interface RiskCalculatorProps {
 //         and an honest warning when the suggested size is impractically tiny
 //         or hits the safety cap (something upstream is off).
 export default function RiskCalculator({ signal, onTakeTrade }: RiskCalculatorProps) {
-  const [symbol, setSymbol] = useState<string>(signal?.symbol || PRIMARY_SYMBOL);
-  const [balance, setBalance] = useState('10000');
-  const [riskPct, setRiskPct] = useState(1);
+  const [prefs] = useUserPrefs();
+  const [symbol, setSymbol] = useState<string>(signal?.symbol || prefs.default_symbol);
+  const [balance, setBalance] = useState(String(prefs.account_balance));
+  const [riskPct, setRiskPct] = useState(prefs.default_risk_pct);
   const [slPips, setSlPips] = useState('30');
+
+  // Re-sync balance + riskPct if user updates Settings while this is open
+  useEffect(() => {
+    setBalance(String(prefs.account_balance));
+    setRiskPct(prefs.default_risk_pct);
+  }, [prefs.account_balance, prefs.default_risk_pct]);
 
   // Prefill SL pips + symbol when a signal is provided
   useEffect(() => {

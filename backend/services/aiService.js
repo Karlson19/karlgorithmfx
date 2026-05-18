@@ -1,4 +1,5 @@
 const cache = require('../utils/cache');
+const quota = require('../utils/quotaTracker');
 const { getPair, PRIMARY_SYMBOL } = require('../config/pairs');
 
 // Safe formatter — indicators may report `available: false` with null
@@ -121,6 +122,7 @@ Respond ONLY with the JSON object, no markdown, no extra text.`;
     console.error(`[${sym}] Primary AI model error:`, primaryErr.message);
 
     try {
+      quota.recordCall('openrouter');
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {

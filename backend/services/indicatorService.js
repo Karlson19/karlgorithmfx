@@ -187,13 +187,58 @@ function calcIchimoku(symbol, highs, lows, closes) {
   };
 }
 
-// ─── Pivot Points (per-pair) ─────────────────────────────────────────────────
+// ─── Pivot Points (NY-close convention) ──────────────────────────────────────
+// Most retail traders use the NY-close (17:00 ET) as the daily boundary
+// for pivots, not UTC midnight. We synthesise an "NY day" by aggregating
+// H1 candles spanning the prior NY close → current NY close window.
+//
+// 17:00 ET = 22:00 UTC (standard time) or 21:00 UTC (daylight savings).
+// We use a fixed 22:00 UTC boundary as a sane approximation — the
+// difference of one hour during DST shifts is tiny and pivots are
+// approximate-by-nature levels anyway.
 async function calcPivotPoints(symbol) {
   try {
-    const dailyCandles = await priceService.fetchHistoricalData('1day', 5, symbol);
-    if (!dailyCandles || dailyCandles.length < 1) return null;
-    const prev = dailyCandles[dailyCandles.length - 1];
-    const H = prev.high, L = prev.low, C = prev.close;
+    // Fetch enough H1 candles to cover at least the previous "NY day"
+    // (24 H1 candles back from now, plus padding for closed-candle drop).
+    const h1Candles = await priceService.fetchHistoricalData('1h', 50, symbol);
+    if (!h1Candles || h1Candles.length < 24) return null;
+
+    // Find the most recent NY-close boundary (22:00 UTC).
+    // Walk backwards through candles, group them into NY-days, pick the
+    // most recently completed one.
+    const NY_CLOSE_UTC_HOUR = 22;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const todayDate = new Date(nowSec * 1000);
+    todayDate.setUTCHours(NY_CLOSE_UTC_HOUR, 0, 0, 0);
+    let lastNyClose = Math.floor(todayDate.getTime() / 1000);
+    if (lastNyClose > nowSec) lastNyClose -= 86400; // today's NY close hasn't happened yet
+    const prevNyClose = lastNyClose - 86400;
+
+    // Gather candles where prevNyClose <= candle.time < lastNyClose
+    const dayCandles = h1Candles.filter(c => c.time >= prevNyClose && c.time < lastNyClose);
+    if (dayCandles.length < 6) {
+      // Fall back to UTC-daily if we don't have enough H1 history (e.g.,
+      // cold start). Better an approximation than nothing.
+      const dailyCandles = await priceService.fetchHistoricalData('1day', 5, symbol);
+      if (!dailyCandles || dailyCandles.length < 1) return null;
+      const prev = dailyCandles[dailyCandles.length - 1];
+      const H = prev.high, L = prev.low, C = prev.close;
+      const PP = (H + L + C) / 3;
+      return {
+        pp: fixPrice(symbol, PP),
+        r1: fixPrice(symbol, 2 * PP - L),
+        r2: fixPrice(symbol, PP + (H - L)),
+        r3: fixPrice(symbol, H + 2 * (PP - L)),
+        s1: fixPrice(symbol, 2 * PP - H),
+        s2: fixPrice(symbol, PP - (H - L)),
+        s3: fixPrice(symbol, L - 2 * (H - PP)),
+        basis: 'utc_daily_fallback',
+      };
+    }
+
+    const H = Math.max(...dayCandles.map(c => c.high));
+    const L = Math.min(...dayCandles.map(c => c.low));
+    const C = dayCandles[dayCandles.length - 1].close;
     const PP = (H + L + C) / 3;
     return {
       pp: fixPrice(symbol, PP),
@@ -203,7 +248,7 @@ async function calcPivotPoints(symbol) {
       s1: fixPrice(symbol, 2 * PP - H),
       s2: fixPrice(symbol, PP - (H - L)),
       s3: fixPrice(symbol, L - 2 * (H - PP)),
-      basis: 'utc_daily',
+      basis: 'ny_close_22utc',
     };
   } catch {
     return null;

@@ -90,4 +90,14 @@ router.get('/calibration', async (req, res) => {
   }
 });
 
+// GET /api/signals/strategy-stats  → win-rate per named strategy (cross-pair + per-pair)
+router.get('/strategy-stats', async (req, res) => {
+  try {
+    const stats = await signalHistoryService.getStrategyStats();
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

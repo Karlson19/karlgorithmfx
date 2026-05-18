@@ -85,6 +85,11 @@ const api = {
     return res.data;
   },
 
+  async getStrategyStats() {
+    const res = await axios.get(`${BASE_URL}/api/signals/strategy-stats`);
+    return res.data;
+  },
+
   // ── Market focus / watchlist ───────────────────────────────────────────────
   async getMarketFocus() {
     const res = await axios.get(`${BASE_URL}/api/market/focus`);
@@ -93,6 +98,12 @@ const api = {
 
   async getWatchlist() {
     const res = await axios.get(`${BASE_URL}/api/market/watchlist`);
+    return res.data;
+  },
+
+  // ── Health ─────────────────────────────────────────────────────────────────
+  async getHealth() {
+    const res = await axios.get(`${BASE_URL}/api/health`);
     return res.data;
   },
 

@@ -177,9 +177,69 @@ async function getSignalStats(symbol = null) {
   return { ...overall, per_pair };
 }
 
+// ─── Per-strategy stats (cross-pair + per-pair win rates) ────────────────────
+// Reads from signals.fired_strategy_name (populated by signalService since
+// Phase 4 migration). Tells you which named strategies actually work for
+// each pair — the single most useful "is this system worth trusting" stat.
+async function getStrategyStats() {
+  const { data, error } = await supabase
+    .from('signals')
+    .select('symbol, fired_strategy_name, confidence, outcome')
+    .not('outcome', 'is', null)
+    .neq('outcome', 'EXPIRED')
+    .not('fired_strategy_name', 'is', null);
+
+  if (error || !data) return { strategies: [], by_pair: {} };
+
+  // Aggregate cross-pair per strategy
+  const byStrat = {};
+  for (const row of data) {
+    const k = row.fired_strategy_name;
+    if (!byStrat[k]) byStrat[k] = { name: k, wins: 0, losses: 0, total: 0, confidence_sum: 0 };
+    byStrat[k].total += 1;
+    byStrat[k].confidence_sum += row.confidence;
+    if (row.outcome === 'WIN_TP1' || row.outcome === 'WIN_TP2') byStrat[k].wins += 1;
+    else if (row.outcome === 'LOSS') byStrat[k].losses += 1;
+  }
+
+  // Aggregate per pair per strategy
+  const byPair = {};
+  for (const row of data) {
+    const sym = row.symbol || PRIMARY_SYMBOL;
+    const strat = row.fired_strategy_name;
+    if (!byPair[sym]) byPair[sym] = {};
+    if (!byPair[sym][strat]) byPair[sym][strat] = { name: strat, wins: 0, losses: 0, total: 0 };
+    byPair[sym][strat].total += 1;
+    if (row.outcome === 'WIN_TP1' || row.outcome === 'WIN_TP2') byPair[sym][strat].wins += 1;
+    else if (row.outcome === 'LOSS') byPair[sym][strat].losses += 1;
+  }
+
+  // Finalise cross-pair stats
+  const strategies = Object.values(byStrat).map(s => ({
+    name: s.name,
+    total: s.total,
+    wins: s.wins,
+    losses: s.losses,
+    win_rate: s.total > 0 ? Math.round((s.wins / s.total) * 100) : 0,
+    avg_confidence: s.total > 0 ? Math.round(s.confidence_sum / s.total) : 0,
+  })).sort((a, b) => b.total - a.total);
+
+  // Finalise per-pair stats
+  const by_pair = {};
+  for (const sym of Object.keys(byPair)) {
+    by_pair[sym] = Object.values(byPair[sym]).map(s => ({
+      ...s,
+      win_rate: s.total > 0 ? Math.round((s.wins / s.total) * 100) : 0,
+    })).sort((a, b) => b.total - a.total);
+  }
+
+  return { strategies, by_pair, min_samples: 8 };
+}
+
 module.exports = {
   saveSignal,
   evaluateOpenSignals,
   getSignalHistory,
   getSignalStats,
+  getStrategyStats,
 };
