@@ -2,6 +2,7 @@ const indicatorService = require('./indicatorService');
 const priceService = require('./priceService');
 const newsService = require('./newsService');
 const calibration = require('./calibrationService');
+const strategies = require('./strategiesService');
 const cache = require('../utils/cache');
 const { saveSignal } = require('./signalHistoryService');
 const { getPair, PRIMARY_SYMBOL } = require('../config/pairs');
@@ -346,9 +347,11 @@ async function generateSignal(symbol = PRIMARY_SYMBOL) {
   if (cached) return cached;
 
   try {
-    const [indicators, news] = await Promise.all([
+    const [indicators, news, candles] = await Promise.all([
       indicatorService.calculateIndicators('1h', sym),
       newsService.fetchNews().catch(() => []),
+      // Strategies need candle access for swing/range/sweep detection.
+      priceService.fetchHistoricalData('1h', 50, sym).catch(() => []),
     ]);
 
     const price = indicators.reference_price;
@@ -359,9 +362,45 @@ async function generateSignal(symbol = PRIMARY_SYMBOL) {
     const blackout = isInNewsBlackout(news, pair);
     const regime = indicators.market_condition;
 
+    // ── Strategy engine ──────────────────────────────────────────────────────
+    // Run all 8 named strategies in parallel; the best-firing one's
+    // confidence boosts the indicator vote when they agree (or pulls it
+    // down when they disagree). Watchlist (partial setups) is also
+    // surfaced so the UI can show what's "almost ready".
+    const stratResult = strategies.evaluateAllStrategies({
+      ind: indicators, candles, price, pair, session, news,
+    });
+
     const voteResult = voteIndicators(indicators, price, pair, regime);
-    const { direction, agreeing, total, agreeing_indicators } = voteResult;
+    const { direction: indicatorDir, agreeing, total, agreeing_indicators } = voteResult;
     let { confidence } = voteResult;
+
+    // Direction: if a strategy fired in the same direction as the indicator
+    // vote, that's confirmation. If a strategy fired in the OPPOSITE
+    // direction, the indicator vote is suspect — fall back to NEUTRAL
+    // unless one side has substantially more weight.
+    let direction = indicatorDir;
+    let firedStrategy = null;
+    if (stratResult.best) {
+      firedStrategy = stratResult.best;
+      if (indicatorDir === 'NEUTRAL') {
+        // Strategy fires even when indicator vote is mixed — adopt it.
+        direction = firedStrategy.direction;
+        confidence = Math.max(confidence, firedStrategy.confidence);
+      } else if (firedStrategy.direction === indicatorDir) {
+        // Agreement — boost confidence.
+        confidence = Math.min(99, confidence + Math.round(firedStrategy.confidence * 0.15));
+      } else {
+        // Disagreement — major haircut, often go NEUTRAL.
+        confidence -= 20;
+      }
+    }
+
+    // Multi-strategy consensus bonus: when 2+ strategies fire in the
+    // same direction, that's strong confluence.
+    if (stratResult.fired_count >= 2 && stratResult.consensus === direction) {
+      confidence = Math.min(99, confidence + 8);
+    }
 
     confidence = applyMTFAdjustment(confidence, direction, indicators.mtf);
     confidence = Math.max(0, Math.min(99, confidence - sessionPenalty));
@@ -398,6 +437,12 @@ async function generateSignal(symbol = PRIMARY_SYMBOL) {
         stop_loss: null, take_profit_1: null, take_profit_2: null,
         confidence,
         strategy: reason,
+        fired_strategy: null,
+        watchlist: stratResult.watching.slice(0, 3).map(w => ({
+          name: w.name, direction: w.direction, completion_pct: w.completion_pct,
+          conditions: w.conditions, description: w.description,
+        })),
+        strategies_fired: stratResult.fired.length,
         market_condition: regime,
         timeframe: 'H1',
         risk_reward: null,
@@ -424,6 +469,12 @@ async function generateSignal(symbol = PRIMARY_SYMBOL) {
     const tp1Pips = Math.abs(price - take_profit_1) / pipSize;
     const rr = slPips > 0 ? `1:${(tp1Pips / slPips).toFixed(1)}` : '1:1.5';
 
+    // Strategy name: prefer the named strategy that fired; fall back to
+    // the indicator-based label so we always have something.
+    const strategyName = firedStrategy
+      ? firedStrategy.name + (stratResult.fired_count > 1 ? ` + ${stratResult.fired_count - 1} more` : '')
+      : buildStrategyName(indicators, direction, regime);
+
     const signal = {
       symbol: sym,
       display_name: pair.display_name,
@@ -431,7 +482,25 @@ async function generateSignal(symbol = PRIMARY_SYMBOL) {
       entry: parseFloat(price.toFixed(pair.digits)),
       stop_loss, take_profit_1, take_profit_2,
       confidence,
-      strategy: buildStrategyName(indicators, direction, regime),
+      strategy: strategyName,
+      // Full firing-strategy detail — UI shows the conditions that hit.
+      fired_strategy: firedStrategy ? {
+        name: firedStrategy.name,
+        description: firedStrategy.description,
+        confidence: firedStrategy.confidence,
+        conditions: firedStrategy.conditions,
+        context: firedStrategy.context,
+      } : null,
+      // Other strategies that also fired (for "confluence" tags).
+      additional_strategies: stratResult.fired
+        .filter(s => firedStrategy && s.name !== firedStrategy.name)
+        .map(s => ({ name: s.name, direction: s.direction, confidence: s.confidence })),
+      // Setups not quite ready — surfaces what to watch next.
+      watchlist: stratResult.watching.slice(0, 3).map(w => ({
+        name: w.name, direction: w.direction, completion_pct: w.completion_pct,
+        conditions: w.conditions, description: w.description,
+      })),
+      strategies_fired: stratResult.fired_count,
       market_condition: regime,
       timeframe: 'H1',
       risk_reward: rr,

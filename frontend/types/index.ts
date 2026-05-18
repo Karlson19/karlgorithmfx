@@ -45,6 +45,51 @@ export interface NewsBlackoutInfo {
   minutes: number;
 }
 
+// One condition in a strategy's checklist.
+export interface StrategyCondition {
+  name: string;
+  met: boolean;
+  weight: number;
+  required?: boolean;
+}
+
+// A strategy that fully fired and produced this signal.
+export interface FiredStrategy {
+  name: string;
+  description: string;
+  confidence: number;
+  conditions: StrategyCondition[];
+  context?: Record<string, unknown>;
+}
+
+// A strategy that's almost ready — surfaced in the watchlist.
+export interface WatchlistItem {
+  symbol?: string;
+  display_name?: string;
+  name: string;
+  description: string;
+  direction: 'BUY' | 'SELL' | null;
+  completion_pct: number;
+  conditions: StrategyCondition[];
+}
+
+// Real-time market context — sessions, news, recommended pairs.
+export interface MarketFocus {
+  timestamp: string;
+  utc_hour: number;
+  utc_time: string;
+  current_session: { label: string; phase: string; minutes_remaining: number };
+  next_session: { label: string; phase: string; minutes_until: number };
+  recommended_pairs: string[];
+  active_pairs: string[];
+  sidelined_pairs: string[];
+  pair_relevance: Record<string, { live: boolean; weight: number; tier: string }>;
+  suggested_strategies: string[];
+  upcoming_news: Array<{ title: string; currency: string; minutes_away: number; impact: string }>;
+  news_affected_pairs: Record<string, { title: string; currency: string; minutes_away: number }>;
+  market_phase: string;
+}
+
 export interface Signal {
   symbol?: string;
   display_name?: string;
@@ -55,6 +100,10 @@ export interface Signal {
   take_profit_2: number | null;
   confidence: number;
   strategy: string;
+  fired_strategy?: FiredStrategy | null;
+  additional_strategies?: Array<{ name: string; direction: SignalDirection; confidence: number }>;
+  watchlist?: WatchlistItem[];
+  strategies_fired?: number;
   market_condition: MarketCondition;
   timeframe: string;
   risk_reward: string | null;
@@ -73,6 +122,7 @@ export interface Signal {
 }
 
 export interface SignalsAllResponse {
+  market_focus?: MarketFocus | null;
   signals: Record<string, Signal>;
   ranked: Signal[];
   errors: Record<string, string>;

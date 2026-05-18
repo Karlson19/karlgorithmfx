@@ -2,7 +2,7 @@
 import { Signal } from '@/types';
 import { cn, getSignalBg } from '@/lib/utils';
 import { formatPairPrice } from '@/lib/pairs';
-import { TrendingUp, TrendingDown, Minus, Clock, ShieldAlert, Target } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Clock, ShieldAlert, Target, Check, X, Eye } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function SignalCard({ signal }: { signal: Signal }) {
@@ -155,6 +155,83 @@ export default function SignalCard({ signal }: { signal: Signal }) {
         </div>
       )}
       </div>
+
+      {/* ── Fired strategy detail (the named setup that produced this signal) */}
+      {signal.fired_strategy && (
+        <div className="mt-5 pt-5 border-t border-border">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <p className="text-text-secondary text-xs uppercase tracking-wider">Fired Strategy</p>
+              <p className="text-white font-bold text-base mt-0.5">{signal.fired_strategy.name}</p>
+              <p className="text-text-secondary text-xs mt-0.5">{signal.fired_strategy.description}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-text-secondary text-xs">Strategy conf.</p>
+              <p className="text-accent font-mono font-bold">{signal.fired_strategy.confidence}%</p>
+            </div>
+          </div>
+          {/* Conditions checklist */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 mt-3">
+            {signal.fired_strategy.conditions.map((c, i) => (
+              <div key={i} className="flex items-start gap-1.5 text-xs">
+                {c.met
+                  ? <Check className="w-3.5 h-3.5 text-success flex-shrink-0 mt-0.5" />
+                  : <X className="w-3.5 h-3.5 text-text-secondary flex-shrink-0 mt-0.5" />}
+                <span className={cn(c.met ? 'text-white' : 'text-text-secondary line-through')}>
+                  {c.name}
+                  {c.required && !c.met && <span className="text-danger ml-1">(required)</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Confluence — other strategies also fired */}
+          {signal.additional_strategies && signal.additional_strategies.length > 0 && (
+            <div className="mt-4">
+              <p className="text-text-secondary text-xs uppercase tracking-wider mb-1.5">Additional confluence</p>
+              <div className="flex flex-wrap gap-1.5">
+                {signal.additional_strategies.map(s => (
+                  <span key={s.name} className="text-xs px-2 py-0.5 bg-success/10 border border-success/20 text-success rounded">
+                    {s.name} ({s.confidence}%)
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Watchlist — partial setups (50%+ ready but not fired) */}
+      {signal.watchlist && signal.watchlist.length > 0 && (
+        <div className="mt-5 pt-5 border-t border-border">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Eye className="w-4 h-4 text-text-secondary" />
+            <p className="text-text-secondary text-xs uppercase tracking-wider">Watchlist — setups forming</p>
+          </div>
+          <div className="space-y-2">
+            {signal.watchlist.map((w, i) => {
+              const pct = Math.round(w.completion_pct * 100);
+              return (
+                <div key={i} className="bg-background border border-border rounded-lg p-2.5">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-white text-xs font-semibold">
+                      {w.name}
+                      {w.direction && <span className={cn('ml-2 font-mono', w.direction === 'BUY' ? 'text-success' : 'text-danger')}>· {w.direction}</span>}
+                    </p>
+                    <span className="text-text-secondary text-xs font-mono">{pct}% ready</span>
+                  </div>
+                  <div className="h-1 bg-border rounded-full overflow-hidden">
+                    <div className="h-full bg-accent/60" style={{ width: `${pct}%` }} />
+                  </div>
+                  <p className="text-text-secondary text-xs mt-1.5">
+                    Missing: {w.conditions.filter(c => !c.met).slice(0, 2).map(c => c.name).join(' · ') || 'almost there'}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

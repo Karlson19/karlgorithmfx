@@ -11,6 +11,7 @@ const indicatorRoutes = require('./routes/indicators');
 const journalRoutes = require('./routes/journal');
 const newsRoutes = require('./routes/news');
 const analysisRoutes = require('./routes/analysis');
+const marketRoutes = require('./routes/market');
 
 const priceService = require('./services/priceService');
 const signalsOrchestrator = require('./services/signalsOrchestrator');
@@ -35,6 +36,7 @@ app.use('/api/indicators', indicatorRoutes);
 app.use('/api/journal', journalRoutes);
 app.use('/api/news', newsRoutes);
 app.use('/api/analysis', analysisRoutes);
+app.use('/api/market', marketRoutes);
 
 app.get('/health', (req, res) => res.json({
   status: 'ok',

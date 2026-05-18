@@ -9,6 +9,7 @@ import ConfidenceBar from '@/components/signals/ConfidenceBar';
 import SignalPerformance from '@/components/signals/SignalPerformance';
 import PairSelector from '@/components/dashboard/PairSelector';
 import MultiPairOverview from '@/components/dashboard/MultiPairOverview';
+import MarketFocus from '@/components/dashboard/MarketFocus';
 import { useSignals } from '@/hooks/useSignals';
 import { PRIMARY_SYMBOL } from '@/lib/pairs';
 import { RefreshCw } from 'lucide-react';
@@ -40,7 +41,13 @@ export default function SignalsPage() {
       </div>
 
       <div className="space-y-4">
-        {/* Multi-pair scoreboard — always at the top, click a row to drill in */}
+        {/* Market focus — what's alive RIGHT NOW. Tops the page so the
+            trader always sees session + news context first. */}
+        <ErrorBoundary>
+          <MarketFocus />
+        </ErrorBoundary>
+
+        {/* Multi-pair scoreboard — click a row to drill in */}
         <ErrorBoundary>
           <MultiPairOverview onSelectPair={setSelectedPair} />
         </ErrorBoundary>

@@ -85,6 +85,17 @@ const api = {
     return res.data;
   },
 
+  // ── Market focus / watchlist ───────────────────────────────────────────────
+  async getMarketFocus() {
+    const res = await axios.get(`${BASE_URL}/api/market/focus`);
+    return res.data;
+  },
+
+  async getWatchlist() {
+    const res = await axios.get(`${BASE_URL}/api/market/watchlist`);
+    return res.data;
+  },
+
   // ── Analysis ───────────────────────────────────────────────────────────────
   async getAnalysis(symbol?: string) {
     const res = await axios.get(`${BASE_URL}/api/analysis`, { params: symbol ? { symbol } : {} });
