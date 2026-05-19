@@ -14,9 +14,16 @@ export default function NewsCard({ item }: { item: NewsItem }) {
       isToday(date) ? 'border-accent/30' : 'border-border'
     )}>
       <div className="flex items-start gap-3">
-        {/* Currency flag */}
+        {/* Currency flag — covers every currency we trade across all pairs */}
         <div className="flex-shrink-0 w-10 h-10 rounded-full bg-background border border-border flex items-center justify-center text-lg">
-          {item.currency === 'EUR' ? '🇪🇺' : '🇺🇸'}
+          {(({
+            EUR: '🇪🇺',
+            USD: '🇺🇸',
+            GBP: '🇬🇧',
+            JPY: '🇯🇵',
+            AUD: '🇦🇺',
+            OTHER: '🌐',
+          } as Record<string, string>)[item.currency] || '🌐')}
         </div>
 
         <div className="flex-1 min-w-0">

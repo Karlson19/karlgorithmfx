@@ -1,7 +1,9 @@
 'use client';
 import { Menu, TrendingUp, TrendingDown, Wifi, WifiOff } from 'lucide-react';
 import { usePrice } from '@/hooks/usePrice';
-import { cn, formatPrice } from '@/lib/utils';
+import { useUserPrefs } from '@/hooks/useUserPrefs';
+import { cn } from '@/lib/utils';
+import { formatPairPrice, getPair } from '@/lib/pairs';
 import { getWebSocketClient } from '@/lib/websocket';
 import { useEffect, useState } from 'react';
 import SystemStatus from './SystemStatus';
@@ -11,7 +13,12 @@ interface HeaderProps {
 }
 
 export default function Header({ onMenuClick }: HeaderProps) {
-  const { price, flash } = usePrice();
+  const [prefs] = useUserPrefs();
+  // Ticker shows the user's default pair. They can still switch pairs on
+  // each page via the page-level PairSelector — Header is just the global
+  // glance value.
+  const { price, flash } = usePrice(prefs.default_symbol);
+  const pair = getPair(prefs.default_symbol);
   const [wsConnected, setWsConnected] = useState(false);
 
   useEffect(() => {
@@ -33,28 +40,29 @@ export default function Header({ onMenuClick }: HeaderProps) {
         <Menu className="w-5 h-5" />
       </button>
 
-      {/* Live Price Ticker */}
-      <div className="flex items-center gap-4 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-text-secondary text-xs font-mono">EUR/USD</span>
+      {/* Live Price Ticker — shows the user's default pair (Settings → Default Pair) */}
+      <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-text-secondary text-xs font-mono whitespace-nowrap">{pair.display_name}</span>
           <span className={cn(
-            'font-mono text-lg font-bold transition-colors duration-300',
+            'font-mono text-base sm:text-lg font-bold transition-colors duration-300 whitespace-nowrap',
             flash === 'up' ? 'text-success' : flash === 'down' ? 'text-danger' : 'text-white'
           )}>
-            {price ? formatPrice(price.price) : '—.—————'}
+            {price ? formatPairPrice(prefs.default_symbol, price.price) : '—.—'}
           </span>
           {price && (
-            <span className={cn('flex items-center gap-0.5 text-xs font-mono', isUp ? 'text-success' : 'text-danger')}>
+            <span className={cn('flex items-center gap-0.5 text-xs font-mono whitespace-nowrap', isUp ? 'text-success' : 'text-danger')}>
               {isUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
               {isUp ? '+' : ''}{price.change_percent?.toFixed(2)}%
             </span>
           )}
         </div>
 
+        {/* Bid/ask hidden on mobile + only shown if a real broker feed exposed them */}
         {price && price.bid != null && price.ask != null && (
-          <div className="hidden sm:flex items-center gap-4 text-xs text-text-secondary font-mono">
-            <span>Bid: <span className="text-white">{formatPrice(price.bid)}</span></span>
-            <span>Ask: <span className="text-white">{formatPrice(price.ask)}</span></span>
+          <div className="hidden lg:flex items-center gap-4 text-xs text-text-secondary font-mono">
+            <span>Bid: <span className="text-white">{formatPairPrice(prefs.default_symbol, price.bid)}</span></span>
+            <span>Ask: <span className="text-white">{formatPairPrice(prefs.default_symbol, price.ask)}</span></span>
             <span>Spread: <span className="text-white">{price.spread_pips?.toFixed(1) ?? '—'}</span></span>
           </div>
         )}

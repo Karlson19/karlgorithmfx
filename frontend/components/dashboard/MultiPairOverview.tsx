@@ -94,35 +94,35 @@ function PairRow({ signal, onClick }: { signal: Signal; onClick?: (s: string) =>
       type="button"
       onClick={() => onClick && sym && onClick(sym)}
       className={cn(
-        'w-full flex items-center gap-4 px-4 py-3 rounded-lg border transition-colors text-left',
+        'w-full flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-3 rounded-lg border transition-colors text-left',
         'bg-background border-border hover:border-zinc-600',
         !isNeutral && 'cursor-pointer'
       )}
     >
       {/* Symbol */}
-      <div className="w-32 flex-shrink-0">
-        <p className="text-white font-mono text-sm font-semibold">{pair.display_name}</p>
-        <p className="text-text-secondary text-xs">{signal.session?.replace(/_/g, ' ').toLowerCase() || '—'}</p>
+      <div className="w-20 sm:w-32 flex-shrink-0 min-w-0">
+        <p className="text-white font-mono text-xs sm:text-sm font-semibold truncate">{pair.display_name}</p>
+        <p className="text-text-secondary text-xs truncate hidden sm:block">{signal.session?.replace(/_/g, ' ').toLowerCase() || '—'}</p>
       </div>
 
       {/* Direction badge */}
-      <div className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded border font-semibold text-xs w-20 justify-center', getSignalBg(signal.direction))}>
-        {signal.direction === 'BUY' ? <TrendingUp className="w-3.5 h-3.5" />
-          : signal.direction === 'SELL' ? <TrendingDown className="w-3.5 h-3.5" />
-          : <Minus className="w-3.5 h-3.5" />}
+      <div className={cn('flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded border font-semibold text-xs w-16 sm:w-20 justify-center flex-shrink-0', getSignalBg(signal.direction))}>
+        {signal.direction === 'BUY' ? <TrendingUp className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+          : signal.direction === 'SELL' ? <TrendingDown className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+          : <Minus className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
         {signal.direction}
       </div>
 
       {/* Entry */}
-      <div className="w-24 hidden md:block">
+      <div className="w-24 hidden md:block flex-shrink-0">
         <p className="text-text-secondary text-xs">Entry</p>
         <p className="text-white font-mono text-sm">{formatPairPrice(sym, signal.entry)}</p>
       </div>
 
       {/* Confidence */}
-      <div className="w-28">
+      <div className="flex-1 min-w-0">
         <p className="text-text-secondary text-xs">Confidence</p>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <span className={cn('font-mono text-sm font-semibold',
             signal.confidence >= 80 ? 'text-success' :
             signal.confidence >= 70 ? 'text-accent' :

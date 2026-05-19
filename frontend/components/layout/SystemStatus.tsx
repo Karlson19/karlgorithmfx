@@ -96,25 +96,44 @@ export default function SystemStatus() {
           <div className="px-4 py-2 border-b border-border">
             <p className="text-text-secondary text-xs uppercase tracking-wider mb-1.5">API Quota</p>
             {health.providers.map(p => (
-              <div key={p.provider} className="flex items-center justify-between text-xs py-0.5">
-                <span className="text-white">{p.name}</span>
-                <div className="flex items-center gap-2">
-                  {p.limit ? (
-                    <>
-                      <div className="w-16 h-1 bg-border rounded-full overflow-hidden">
-                        <div className={cn('h-full',
-                          p.status === 'exhausted' ? 'bg-danger'
-                          : p.status === 'hard_throttle' ? 'bg-danger/70'
-                          : p.status === 'soft_throttle' ? 'bg-yellow-400'
-                          : 'bg-success'
-                        )} style={{ width: `${Math.min(100, p.ratio * 100)}%` }} />
-                      </div>
-                      <span className="text-text-secondary font-mono w-16 text-right">{p.used} / {p.limit}</span>
-                    </>
-                  ) : (
-                    <span className="text-text-secondary font-mono">{p.used} calls today</span>
-                  )}
+              <div key={p.provider} className="py-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-white">{p.name}</span>
+                  <div className="flex items-center gap-2">
+                    {p.total_limit > 0 ? (
+                      <>
+                        <div className="w-16 h-1 bg-border rounded-full overflow-hidden">
+                          <div className={cn('h-full',
+                            p.status === 'exhausted' || p.status === 'missing_key' ? 'bg-danger'
+                            : p.status === 'hard_throttle' ? 'bg-danger/70'
+                            : p.status === 'soft_throttle' ? 'bg-yellow-400'
+                            : 'bg-success'
+                          )} style={{ width: `${Math.min(100, p.total_ratio * 100)}%` }} />
+                        </div>
+                        <span className="text-text-secondary font-mono w-16 text-right">{p.total_used} / {p.total_limit}</span>
+                      </>
+                    ) : (
+                      <span className="text-text-secondary font-mono">
+                        {p.status === 'missing_key' ? 'no key' : `${p.total_used} calls`}
+                      </span>
+                    )}
+                  </div>
                 </div>
+                {p.keys && p.keys.length > 1 && (
+                  <div className="mt-1 flex flex-wrap gap-1 pl-2">
+                    {p.keys.map(k => (
+                      <span key={k.keyId} className={cn(
+                        'text-[10px] font-mono px-1.5 py-0.5 rounded border',
+                        k.status === 'exhausted'    ? 'border-danger/30 text-danger'
+                        : k.status === 'hard_throttle' ? 'border-yellow-400/30 text-yellow-400'
+                        : k.status === 'soft_throttle' ? 'border-yellow-400/30 text-yellow-400'
+                        : 'border-success/30 text-success'
+                      )}>
+                        {k.keyId} {k.used}/{k.limit ?? '∞'}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>

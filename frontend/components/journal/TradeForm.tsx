@@ -171,8 +171,10 @@ export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultA
   const priceStep = pairMeta.pip_size / 10;
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-      <div className="bg-card border border-border rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center sm:p-4">
+      {/* On mobile: full-width sheet that slides up from the bottom.
+          On sm+: centred dialog with rounded corners. */}
+      <div className="bg-card border border-border w-full sm:max-w-lg sm:rounded-xl rounded-t-2xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-border">
           <h2 className="text-white font-bold text-lg">
             {trade ? 'Edit Trade' : fromSignal ? `Log trade from ${fromSignal.display_name || fromSignal.symbol} signal` : 'Log New Trade'}

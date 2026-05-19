@@ -1,6 +1,7 @@
 const axios = require('axios');
 const cache = require('../utils/cache');
 const quota = require('../utils/quotaTracker');
+const tdKeys = require('../utils/twelveDataKeys');
 const { PRIMARY_SYMBOL, getPair, isSupported } = require('../config/pairs');
 
 const TWELVE_DATA_BASE   = 'https://api.twelvedata.com';
@@ -62,26 +63,86 @@ function dedupeCandles(candles) {
   return out;
 }
 
-// ─── Retry helper ────────────────────────────────────────────────────────────
-async function withRetry(fn, attempts = 3, baseDelayMs = 400) {
-  let lastErr;
-  for (let i = 0; i < attempts; i++) {
-    try { return await fn(); }
-    catch (err) {
+// ─── Twelve Data caller with key rotation + retry ────────────────────────────
+// Tries each healthy key in round-robin order. When a key returns a rate-
+// limit error we mark it exhausted (so subsequent calls today skip it) and
+// try the next key. When all keys are exhausted we throw — the callers
+// have their own fallbacks (Alpha Vantage / stale cache).
+//
+// `path` is appended to TWELVE_DATA_BASE, e.g. '/quote' or '/time_series'.
+// `params` is everything BUT the apikey (we add that per attempt).
+// `opts.essential` controls whether we'll burn keys past soft-throttle.
+async function callTwelveData(path, params, opts = {}) {
+  const essential = opts.essential !== false;
+  const maxAttempts = Math.max(1, tdKeys.keyCount());
+  let lastErr = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const key = tdKeys.getNextKey({ essential });
+    if (!key) {
+      const err = new Error('All Twelve Data keys exhausted for today');
+      err.code = 'TD_ALL_EXHAUSTED';
+      throw err;
+    }
+
+    try {
+      quota.recordCall('twelve_data', key.id);
+      const res = await axios.get(`${TWELVE_DATA_BASE}${path}`, {
+        params: { ...params, apikey: key.value },
+        timeout: 12000,
+      });
+      // Twelve Data returns 200 with a payload `{ status: 'error', code, message }`
+      // for rate-limit problems — convert that into a thrown error so the
+      // retry logic sees it.
+      if (res.data && res.data.status === 'error') {
+        const e = new Error(res.data.message || 'Twelve Data error');
+        e.tdCode = res.data.code;
+        throw e;
+      }
+      return res.data;
+    } catch (err) {
       lastErr = err;
-      if (i < attempts - 1) await new Promise(r => setTimeout(r, baseDelayMs * Math.pow(2, i)));
+      if (tdKeys.isRateLimitError(err)) {
+        // Mark this key dead for the rest of the UTC day and roll to next.
+        quota.markExhausted('twelve_data', key.id, 'rate-limited by provider');
+        continue;
+      }
+      // Non-rate-limit error (network, timeout, bad payload): one quick retry
+      // with the SAME key before falling through to the next.
+      try {
+        await new Promise(r => setTimeout(r, 400));
+        quota.recordCall('twelve_data', key.id);
+        const res = await axios.get(`${TWELVE_DATA_BASE}${path}`, {
+          params: { ...params, apikey: key.value },
+          timeout: 12000,
+        });
+        if (res.data && res.data.status === 'error') {
+          if (tdKeys.isRateLimitError({ message: res.data.message })) {
+            quota.markExhausted('twelve_data', key.id, 'rate-limited by provider');
+            continue;
+          }
+          throw new Error(res.data.message || 'Twelve Data error');
+        }
+        return res.data;
+      } catch (err2) {
+        lastErr = err2;
+        // If even the retry looks rate-limited, blacklist + rotate.
+        if (tdKeys.isRateLimitError(err2)) {
+          quota.markExhausted('twelve_data', key.id, 'rate-limited by provider');
+          continue;
+        }
+        // Otherwise rotate keys anyway — the provider might be flaky for this key.
+        continue;
+      }
     }
   }
-  throw lastErr;
+  throw lastErr || new Error('Twelve Data call failed (no keys available)');
 }
 
 // ─── Symbol normalisation ────────────────────────────────────────────────────
-// Accept "EURUSD", "eur/usd", "EUR/USD" etc — always normalise to canonical
-// upper-case slashed form. Reject anything not in the pair config.
 function normalizeSymbol(symbol) {
   if (!symbol) return PRIMARY_SYMBOL;
   const cleaned = String(symbol).toUpperCase().replace(/[^A-Z/]/g, '');
-  // Inject slash if user passed e.g. "EURUSD"
   if (cleaned.length === 6 && !cleaned.includes('/')) {
     return `${cleaned.slice(0, 3)}/${cleaned.slice(3)}`;
   }
@@ -90,9 +151,7 @@ function normalizeSymbol(symbol) {
 
 function resolveSymbol(symbol) {
   const norm = normalizeSymbol(symbol);
-  if (!isSupported(norm)) {
-    throw new Error(`Unsupported symbol: ${symbol}`);
-  }
+  if (!isSupported(norm)) throw new Error(`Unsupported symbol: ${symbol}`);
   return norm;
 }
 
@@ -104,16 +163,7 @@ async function fetchLivePrice(symbol = PRIMARY_SYMBOL) {
   if (cached) return cached;
 
   try {
-    const data = await withRetry(async () => {
-      quota.recordCall('twelve_data');
-      const res = await axios.get(`${TWELVE_DATA_BASE}/quote`, {
-        params: { symbol: sym, apikey: process.env.TWELVE_DATA_API_KEY },
-        timeout: 8000,
-      });
-      if (res.data && res.data.status === 'error') throw new Error(res.data.message);
-      return res.data;
-    });
-
+    const data = await callTwelveData('/quote', { symbol: sym });
     const close = parseFloat(data.close);
     if (!isFinite(close) || close <= 0) throw new Error('Bad live price payload');
 
@@ -122,7 +172,6 @@ async function fetchLivePrice(symbol = PRIMARY_SYMBOL) {
       symbol: sym,
       display_name: pair.display_name,
       price: close,
-      // Free tier doesn't publish bid/ask — null with `spread_estimated` flag.
       bid: null,
       ask: null,
       spread_pips: null,
@@ -139,36 +188,39 @@ async function fetchLivePrice(symbol = PRIMARY_SYMBOL) {
     };
 
     cache.set(cacheKey, price, 30);
+    cache.set(cacheKey + '_lkg', price, 24 * 3600);
     return price;
   } catch (err) {
     console.error(`[${sym}] Twelve Data live price error, falling back:`, err.message);
-    return fetchFromAlphaVantage(sym);
+    const fb = await fetchFromAlphaVantage(sym);
+    if (fb) return fb;
+    // Last-resort stale serve so the UI doesn't blank out.
+    const stale = cache.get(cacheKey + '_lkg');
+    if (stale) {
+      console.warn(`[${sym}] Serving last-known-good live price`);
+      return { ...stale, source: 'stale_cache' };
+    }
+    return null;
   }
 }
 
 async function fetchFromAlphaVantage(symbol) {
   const sym = resolveSymbol(symbol);
-  // Alpha Vantage uses separate from/to. Split "EUR/USD" → "EUR", "USD".
-  // Gold (XAU/USD) requires a different endpoint we don't support here — we
-  // simply return the last-known-good cached price for that pair.
   const [from, to] = sym.split('/');
   if (sym === 'XAU/USD') {
-    const stale = cache.get(`live_price_${sym}`);
-    if (stale) return stale;
+    // Alpha Vantage doesn't expose XAU/USD on the simple FX endpoint — give up.
     return null;
   }
   try {
-    const res = await withRetry(() => {
-      quota.recordCall('alpha_vantage');
-      return axios.get(ALPHA_VANTAGE_BASE, {
-        params: {
-          function: 'CURRENCY_EXCHANGE_RATE',
-          from_currency: from,
-          to_currency:   to,
-          apikey: process.env.ALPHA_VANTAGE_API_KEY,
-        },
-        timeout: 8000,
-      });
+    quota.recordCall('alpha_vantage');
+    const res = await axios.get(ALPHA_VANTAGE_BASE, {
+      params: {
+        function: 'CURRENCY_EXCHANGE_RATE',
+        from_currency: from,
+        to_currency:   to,
+        apikey: process.env.ALPHA_VANTAGE_API_KEY,
+      },
+      timeout: 8000,
     });
 
     const data = res.data && res.data['Realtime Currency Exchange Rate'];
@@ -182,13 +234,9 @@ async function fetchFromAlphaVantage(symbol) {
       symbol: sym,
       display_name: pair.display_name,
       price: p,
-      bid: null,
-      ask: null,
-      spread_pips: null,
-      spread_estimated: true,
+      bid: null, ask: null, spread_pips: null, spread_estimated: true,
       typical_spread: pair.typical_spread,
-      change: 0,
-      change_percent: 0,
+      change: 0, change_percent: 0,
       open: p, high: p, low: p, volume: 0,
       timestamp: new Date().toISOString(),
       source: 'alpha_vantage',
@@ -198,8 +246,7 @@ async function fetchFromAlphaVantage(symbol) {
     return price;
   } catch (err) {
     console.error(`[${sym}] Alpha Vantage error:`, err.message);
-    const stale = cache.get(`live_price_${sym}`);
-    return stale || null;
+    return null;
   }
 }
 
@@ -213,19 +260,8 @@ async function fetchHistoricalData(interval = '1h', outputsize = 200, symbol = P
   const requestSize = outputsize + 1;
 
   try {
-    const data = await withRetry(async () => {
-      quota.recordCall('twelve_data');
-      const res = await axios.get(`${TWELVE_DATA_BASE}/time_series`, {
-        params: {
-          symbol: sym,
-          interval,
-          outputsize: requestSize,
-          apikey: process.env.TWELVE_DATA_API_KEY,
-        },
-        timeout: 12000,
-      });
-      if (res.data && res.data.status === 'error') throw new Error(res.data.message);
-      return res.data;
+    const data = await callTwelveData('/time_series', {
+      symbol: sym, interval, outputsize: requestSize,
     });
 
     let candles = (data.values || [])
@@ -248,8 +284,6 @@ async function fetchHistoricalData(interval = '1h', outputsize = 200, symbol = P
 
     const ttl = Math.min(secondsUntilCandleClose(interval), intervalSeconds(interval));
     cache.set(cacheKey, candles, ttl);
-    // Stash a "last known good" copy with a long TTL so we can survive
-    // outages without crashing signal generation.
     cache.set(cacheKey + '_lkg', candles, 24 * 3600);
     return candles;
   } catch (err) {

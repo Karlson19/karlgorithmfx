@@ -336,7 +336,7 @@ export type ImpactLevel = 'HIGH' | 'MEDIUM' | 'LOW';
 export interface NewsItem {
   id: string;
   title: string;
-  currency: 'EUR' | 'USD' | 'OTHER';
+  currency: 'EUR' | 'USD' | 'GBP' | 'JPY' | 'AUD' | 'OTHER';
   date: string;
   impact: ImpactLevel;
   forecast: string | null;
@@ -363,14 +363,26 @@ export interface WSMessage {
 }
 
 // ─── Health ──────────────────────────────────────────────────────────────────
-export interface ProviderUsage {
-  provider: string;
-  name: string;
+// Per-key usage breakdown — Twelve Data supports multiple keys for rotation.
+export interface ProviderKeyUsage {
+  keyId: string;
   used: number;
   limit: number | null;
   remaining: number | null;
   ratio: number;
   status: 'ok' | 'soft_throttle' | 'hard_throttle' | 'exhausted' | 'unlimited';
+}
+
+export interface ProviderUsage {
+  provider: string;
+  name: string;
+  total_used: number;
+  total_limit: number;
+  total_ratio: number;
+  keys: ProviderKeyUsage[];
+  healthy_keys: number;
+  total_keys: number;
+  status: 'ok' | 'soft_throttle' | 'hard_throttle' | 'exhausted' | 'unlimited' | 'missing_key';
 }
 
 export interface SignalHealth {
@@ -379,6 +391,21 @@ export interface SignalHealth {
   age_minutes: number | null;
   direction?: SignalDirection;
   confidence?: number;
+}
+
+export interface StrategyStat {
+  name: string;
+  total: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  avg_confidence?: number;
+}
+
+export interface StrategyStatsResponse {
+  strategies: StrategyStat[];
+  by_pair: Record<string, StrategyStat[]>;
+  min_samples: number;
 }
 
 export interface SystemHealth {

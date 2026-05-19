@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'KarlgorithmFX — EUR/USD Trading Dashboard',
-  description: 'Professional EUR/USD forex trading analysis with AI-powered signals',
+  title: 'KarlgorithmFX — Multi-Pair Trading Dashboard',
+  description: 'Multi-pair forex + gold analysis with AI-powered signals',
   icons: {
     icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>"
   }

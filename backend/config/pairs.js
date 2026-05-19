@@ -111,6 +111,23 @@ const PAIRS = {
     description: 'Safe-haven. Much higher vol — same indicator on gold ≠ same on EUR/USD.',
     enabled: true,
   },
+  'AUD/USD': {
+    symbol: 'AUD/USD',
+    display_name: 'AUD/USD',
+    pip_size: 0.0001,
+    digits: 5,
+    typical_spread: 0.9,
+    atr_floor: 0.0010,
+    pip_value_per_std_lot_usd: 10,
+    contract_size: 100000,
+    // Aussie is risk-on/off sensitive — most active in Asian session
+    // (overlap with RBA / China data) plus the London open.
+    session_weights: { ASIAN: 0.9, LONDON_NY_OVERLAP: 1.0, LONDON: 0.85, NEW_YORK: 0.9, DEAD_ZONE: 0.35 },
+    news_currencies: ['AUD', 'USD'],
+    regime_bias: 'mixed',
+    description: 'Risk-on/off proxy. Reacts to RBA, commodity prices, China data.',
+    enabled: true,
+  },
 };
 
 // Primary pair: the one used for "current_signal", live-price ticker by default,

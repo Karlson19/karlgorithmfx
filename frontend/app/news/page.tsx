@@ -6,8 +6,18 @@ import { NewsItem } from '@/types';
 import api from '@/lib/api';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 
-type FilterCurrency = 'ALL' | 'EUR' | 'USD';
+// Filter chips for every currency we trade across all supported pairs.
+type FilterCurrency = 'ALL' | 'EUR' | 'USD' | 'GBP' | 'JPY' | 'AUD';
 type FilterImpact = 'ALL' | 'HIGH';
+
+const CURRENCY_LABELS: Record<FilterCurrency, string> = {
+  ALL: 'All Currencies',
+  EUR: '🇪🇺 EUR',
+  USD: '🇺🇸 USD',
+  GBP: '🇬🇧 GBP',
+  JPY: '🇯🇵 JPY',
+  AUD: '🇦🇺 AUD',
+};
 
 export default function NewsPage() {
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -35,10 +45,10 @@ export default function NewsPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <div>
           <h1 className="text-white text-2xl font-bold">Economic Calendar</h1>
-          <p className="text-text-secondary text-sm">EUR/USD news events and releases</p>
+          <p className="text-text-secondary text-sm">News events for all supported pairs — filter by currency below</p>
         </div>
         <button
           onClick={fetchNews}
@@ -52,34 +62,34 @@ export default function NewsPage() {
       {highImpactNear && (
         <div className="mb-4 flex items-center gap-3 bg-danger/10 border border-danger/30 text-danger rounded-xl px-4 py-3 text-sm">
           <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-          <span>⚠️ High impact news within 1 hour — Consider reducing lot size or waiting</span>
+          <span>High impact news within 1 hour — Consider reducing lot size or waiting</span>
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex gap-2 flex-wrap mb-5">
-        {(['ALL', 'EUR', 'USD'] as FilterCurrency[]).map(c => (
+      {/* Filters — currency chips scroll horizontally on mobile */}
+      <div className="flex gap-2 mb-5 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin">
+        {(Object.keys(CURRENCY_LABELS) as FilterCurrency[]).map(c => (
           <button
             key={c}
             onClick={() => setCurrencyFilter(c)}
-            className={`px-4 py-1.5 rounded-full text-sm border transition-colors ${
+            className={`px-4 py-1.5 rounded-full text-sm border transition-colors whitespace-nowrap flex-shrink-0 ${
               currencyFilter === c
                 ? 'bg-accent/10 border-accent text-accent font-medium'
                 : 'border-border text-text-secondary hover:text-white hover:border-zinc-600'
             }`}
           >
-            {c === 'ALL' ? 'All Currencies' : c === 'EUR' ? '🇪🇺 EUR' : '🇺🇸 USD'}
+            {CURRENCY_LABELS[c]}
           </button>
         ))}
         <button
           onClick={() => setImpactFilter(impactFilter === 'HIGH' ? 'ALL' : 'HIGH')}
-          className={`px-4 py-1.5 rounded-full text-sm border transition-colors ${
+          className={`px-4 py-1.5 rounded-full text-sm border transition-colors whitespace-nowrap flex-shrink-0 ${
             impactFilter === 'HIGH'
               ? 'bg-danger/10 border-danger text-danger font-medium'
               : 'border-border text-text-secondary hover:text-white hover:border-zinc-600'
           }`}
         >
-          🔴 High Impact Only
+          High Impact Only
         </button>
       </div>
 

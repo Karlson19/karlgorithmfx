@@ -92,6 +92,7 @@ Provide a professional analysis in this exact JSON format:
 Respond ONLY with the JSON object, no markdown, no extra text.`;
 
   try {
+    quota.recordCall('openrouter');
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {

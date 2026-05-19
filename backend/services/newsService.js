@@ -26,14 +26,30 @@ function parseImpact(title, description) {
   return 'LOW';
 }
 
+// Multi-currency detector — covers every currency we trade across all
+// supported pairs (EUR, USD, GBP, JPY, AUD). Order matters: more-specific
+// regional/central-bank keywords first so we don't misclassify "UK GDP"
+// as USD via the 'us' substring.
 function detectCurrency(title) {
-  const text = title.toLowerCase();
-  if (text.includes('eur') || text.includes('ecb') || text.includes('euro') ||
-      text.includes('german') || text.includes('france') || text.includes('eurozone')) {
+  const text = ' ' + title.toLowerCase() + ' ';
+  // GBP — Bank of England, UK, Britain, Sterling
+  if (/(\bboe\b|\bgbp\b|\bsterling\b|\buk\b|\bbritish\b|\bbritain\b|\bengland\b)/.test(text)) {
+    return 'GBP';
+  }
+  // JPY — Bank of Japan, Tokyo, Yen
+  if (/(\bboj\b|\bjpy\b|\byen\b|\bjapan\b|\btokyo\b)/.test(text)) {
+    return 'JPY';
+  }
+  // AUD — RBA, Australia, Aussie
+  if (/(\brba\b|\baud\b|\baussie\b|\baustralia\b)/.test(text)) {
+    return 'AUD';
+  }
+  // EUR — ECB, Eurozone, German/French data, EU
+  if (/(\becb\b|\beur\b|\beuro\b|\beurozone\b|\bgerman\b|\bfrance\b|\bfrench\b|\bgermany\b|\bitaly\b|\bspain\b)/.test(text)) {
     return 'EUR';
   }
-  if (text.includes('usd') || text.includes('fed') || text.includes('us ') ||
-      text.includes('nfp') || text.includes('fomc') || text.includes('dollar')) {
+  // USD — Fed/FOMC, US, dollar, NFP
+  if (/(\bfed\b|\bfomc\b|\bnfp\b|\busd\b|\bdollar\b|\bus\b|\bamerican\b|\bunited states\b)/.test(text)) {
     return 'USD';
   }
   return 'OTHER';
@@ -147,7 +163,7 @@ async function fetchNews() {
       link: item.link,
       countdown: formatCountdown(item.pubDate || new Date().toISOString()),
       snippet: item.contentSnippet ? item.contentSnippet.slice(0, 150) : ''
-    })).filter(n => n.currency === 'EUR' || n.currency === 'USD');
+    })).filter(n => n.currency !== 'OTHER');
 
     const news = items.length > 0 ? items : getFallbackNews();
     cache.set('news', news, 300); // 5 min

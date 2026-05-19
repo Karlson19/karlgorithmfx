@@ -39,7 +39,7 @@ export default function LoginPage() {
             <TrendingUp className="w-7 h-7 text-accent" />
           </div>
           <h1 className="text-white text-2xl font-bold tracking-tight">KarlgorithmFX</h1>
-          <p className="text-text-secondary text-sm mt-1">EUR/USD Trading Intelligence</p>
+          <p className="text-text-secondary text-sm mt-1">Multi-Pair Trading Intelligence</p>
         </div>
 
         {/* Card */}
