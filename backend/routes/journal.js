@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../db/supabase');
 const priceService = require('../services/priceService');
+const tradeMonitor = require('../services/tradeMonitorService');
 const { getPair, PRIMARY_SYMBOL, isSupported } = require('../config/pairs');
 
 // ─── Auth helper ─────────────────────────────────────────────────────────────
@@ -302,6 +303,21 @@ router.put('/:id', async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    // If the user moved SL to break-even (or beyond) or closed the trade,
+    // reset the peak-profit tracker so we stop nagging about giveback on
+    // a position that's already protected.
+    try {
+      if (data) {
+        const slMoved = data.stop_loss != null
+          && ((data.direction === 'BUY'  && parseFloat(data.stop_loss) >= parseFloat(data.entry_price))
+           || (data.direction === 'SELL' && parseFloat(data.stop_loss) <= parseFloat(data.entry_price)));
+        if (slMoved || data.status === 'closed') {
+          tradeMonitor.resetPeak(data.id);
+        }
+      }
+    } catch {}
+
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -323,6 +339,22 @@ router.delete('/:id', async (req, res) => {
     if (error) throw error;
     res.json({ success: true });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/journal/alerts ─────────────────────────────────────────────────
+// Per-user trade-monitor alerts: PROFIT_GIVEBACK, MOVE_TO_BREAKEVEN,
+// DANGEROUS_SESSION, VOLATILITY_SPIKE, HIGH_NEWS_INCOMING, TP1_HIT.
+// Computed live from open trades + market state — no DB writes.
+router.get('/alerts', async (req, res) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const alerts = await tradeMonitor.analyseOpenTrades(user.id);
+    res.json({ alerts, timestamp: new Date().toISOString() });
+  } catch (err) {
+    console.error('alerts error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

@@ -3,9 +3,10 @@ import { Trade } from '@/types';
 import { cn, formatCurrency } from '@/lib/utils';
 import { formatPairPrice, getPair } from '@/lib/pairs';
 import { format } from 'date-fns';
-import { Edit, Trash2, X, Sparkles } from 'lucide-react';
-import { useState } from 'react';
+import { Edit, Trash2, X, Sparkles, AlertOctagon, AlertTriangle } from 'lucide-react';
+import { useState, useMemo } from 'react';
 import api from '@/lib/api';
+import { useTradeAlerts } from '@/hooks/useTradeAlerts';
 
 interface TradeTableProps {
   trades: Trade[];
@@ -17,6 +18,46 @@ export default function TradeTable({ trades, onRefresh, onEdit }: TradeTableProp
   const [closingId, setClosingId] = useState<string | null>(null);
   const [closePrice, setClosePrice] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
+
+  // Pull live trade alerts so we can flag rows with active risk warnings.
+  // The hook handles polling — we just consume the current alert list.
+  const { alerts } = useTradeAlerts();
+  const alertsByTrade = useMemo(() => {
+    const map: Record<string, { critical: number; warning: number; info: number }> = {};
+    for (const a of alerts) {
+      if (!map[a.trade_id]) map[a.trade_id] = { critical: 0, warning: 0, info: 0 };
+      map[a.trade_id][a.severity] += 1;
+    }
+    return map;
+  }, [alerts]);
+
+  function TradeAlertBadge({ tradeId }: { tradeId: string }) {
+    const counts = alertsByTrade[tradeId];
+    if (!counts) return null;
+    if (counts.critical > 0) {
+      return (
+        <span title={`${counts.critical} critical alert${counts.critical !== 1 ? 's' : ''}`}
+              className="inline-flex items-center gap-0.5 text-danger animate-pulse">
+          <AlertOctagon className="w-3.5 h-3.5" />
+        </span>
+      );
+    }
+    if (counts.warning > 0) {
+      return (
+        <span title={`${counts.warning} warning${counts.warning !== 1 ? 's' : ''}`} className="inline-flex items-center text-yellow-400">
+          <AlertTriangle className="w-3.5 h-3.5" />
+        </span>
+      );
+    }
+    if (counts.info > 0) {
+      return (
+        <span title={`${counts.info} info`} className="inline-flex items-center text-accent">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+        </span>
+      );
+    }
+    return null;
+  }
 
   async function handleClose(id: string) {
     if (!closePrice) return;
@@ -58,6 +99,7 @@ export default function TradeTable({ trades, onRefresh, onEdit }: TradeTableProp
             <div key={trade.id} className="p-4">
               <div className="flex items-center justify-between mb-2 gap-2">
                 <div className="flex items-center gap-2 min-w-0">
+                  <TradeAlertBadge tradeId={trade.id} />
                   <span className="text-white font-mono text-sm font-semibold">{pair.display_name}</span>
                   {trade.signal_id && <Sparkles className="w-3 h-3 text-accent flex-shrink-0" />}
                   <span className={cn('px-2 py-0.5 rounded text-xs font-bold border flex-shrink-0',
@@ -165,6 +207,7 @@ export default function TradeTable({ trades, onRefresh, onEdit }: TradeTableProp
                 </td>
                 <td className="px-4 py-3 font-mono text-white text-xs whitespace-nowrap">
                   <div className="flex items-center gap-1.5">
+                    <TradeAlertBadge tradeId={trade.id} />
                     <span>{pair.display_name}</span>
                     {trade.signal_id && (
                       <span title="Logged from a live signal" className="inline-flex">

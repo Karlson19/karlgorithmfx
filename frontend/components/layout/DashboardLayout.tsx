@@ -3,6 +3,7 @@ import { useState } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import AuthGuard from './AuthGuard';
+import TradeAlertsPanel from './TradeAlertsPanel';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -17,6 +18,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {children}
           </main>
         </div>
+        {/* Floating trade-alerts panel — appears on every authenticated page.
+            Stays out of the way until the user has open trades that need
+            attention; then it surfaces with severity-appropriate prominence. */}
+        <TradeAlertsPanel />
       </div>
     </AuthGuard>
   );

@@ -412,6 +412,42 @@ export interface StrategyStatsResponse {
   min_samples: number;
 }
 
+// ─── Trade monitor alerts ────────────────────────────────────────────────────
+// Emitted by backend/services/tradeMonitorService.js for the user's open
+// trades. Severity drives the UI prominence (info = banner, warning =
+// solid panel, critical = browser notification + red panel).
+
+export type TradeAlertType =
+  | 'PROFIT_GIVEBACK'
+  | 'MOVE_TO_BREAKEVEN'
+  | 'TP1_HIT'
+  | 'DANGEROUS_SESSION'
+  | 'VOLATILITY_SPIKE'
+  | 'HIGH_NEWS_INCOMING'
+  | 'STOP_TOO_FAR';
+
+export type TradeAlertSeverity = 'info' | 'warning' | 'critical';
+
+export interface TradeAlert {
+  id: string;
+  trade_id: string;
+  symbol: string;
+  type: TradeAlertType;
+  severity: TradeAlertSeverity;
+  title: string;
+  message: string;
+  suggested_action: string;
+  suggested_sl?: number;
+  current_price?: number;
+  current_pnl?: number;
+  peak_pnl?: number;
+}
+
+export interface TradeAlertsResponse {
+  alerts: TradeAlert[];
+  timestamp: string;
+}
+
 export interface SystemHealth {
   status: 'ok' | 'degraded' | 'critical';
   reasons: string[];
