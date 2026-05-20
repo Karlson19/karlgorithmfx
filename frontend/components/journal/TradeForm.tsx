@@ -3,10 +3,10 @@ import { useState, useEffect, useMemo } from 'react';
 import { Signal, TradeDirection } from '@/types';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { X, Sparkles } from 'lucide-react';
+import { X, Sparkles, CheckCircle, Eye, Wallet } from 'lucide-react';
 import {
   getPair, PAIRS, ENABLED_SYMBOLS, PRIMARY_SYMBOL,
-  pipsBetween, recommendedLotSize, pnlUsd,
+  formatPairPrice, pipsBetween, recommendedLotSize, pnlUsd,
 } from '@/lib/pairs';
 import { useUserPrefs } from '@/hooks/useUserPrefs';
 import { analyseExposure } from '@/lib/correlations';
@@ -69,6 +69,19 @@ export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultA
   // (Settings page) and the optional defaultAccountBalance prop wins if passed.
   const [accountBal, setAccountBal] = useState(defaultAccountBalance ?? prefs.account_balance);
   const [riskPct, setRiskPct] = useState(prefs.default_risk_pct);
+
+  // When taking a trade from a signal, the lot size auto-tracks the
+  // balance × risk ÷ SL computation so the user just types their current
+  // balance and gets a ready-to-use lot. Once they manually edit the lot,
+  // we stop auto-overwriting it.
+  const takingFromSignal = !!fromSignal && fromSignal.direction !== 'NEUTRAL' && !trade;
+  const [autoLot, setAutoLot] = useState(takingFromSignal);
+
+  // Post-save confirmation summary (so the user SEES the trade is now
+  // being monitored before the modal closes).
+  const [confirmation, setConfirmation] = useState<{
+    lots: number; risk: number; symbol: string; direction: TradeDirection; entry: number;
+  } | null>(null);
 
   // Existing open positions for the correlation warning. Fetched once on
   // mount — refreshing would only matter mid-form, which is rare.
@@ -155,6 +168,21 @@ export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultA
     if (suggestedLot != null) setLotSize(suggestedLot.toFixed(2));
   }
 
+  // Auto-sync the lot field to the suggestion while autoLot is on. The user
+  // types their balance, the lot updates live. Editing the lot manually
+  // turns this off.
+  useEffect(() => {
+    if (autoLot && suggestedLot != null) {
+      setLotSize(suggestedLot.toFixed(2));
+    }
+  }, [autoLot, suggestedLot]);
+
+  // Money at risk for the current inputs (used in the risk summary + the
+  // post-save confirmation).
+  const moneyAtRisk = (slPips != null && isFinite(lotN) && lotN > 0)
+    ? slPips * pairMeta.pip_value_per_std_lot_usd * lotN
+    : null;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -180,10 +208,23 @@ export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultA
 
       if (trade?.id) {
         await api.updateTrade(trade.id, payload as unknown as Record<string, unknown>);
+        onSave();
       } else {
         await api.createTrade(payload as unknown as Record<string, unknown>);
+        // Show the confirmation summary for newly-opened trades so the user
+        // sees it's now being monitored. Closed/historical logs skip this.
+        if (status === 'open') {
+          setConfirmation({
+            lots: parseFloat(lotSize),
+            risk: moneyAtRisk ?? 0,
+            symbol: pair,
+            direction,
+            entry: parseFloat(entryPrice),
+          });
+        } else {
+          onSave();
+        }
       }
-      onSave();
     } catch (err: unknown) {
       // Backend returns 422 with a clear error message for risk-limit
       // breaches — surface it to the user instead of a generic 'failed'.
@@ -206,14 +247,109 @@ export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultA
       <div className="bg-card border border-border w-full sm:max-w-lg sm:rounded-xl rounded-t-2xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-border">
           <h2 className="text-white font-bold text-lg">
-            {trade ? 'Edit Trade' : fromSignal ? `Log trade from ${fromSignal.display_name || fromSignal.symbol} signal` : 'Log New Trade'}
+            {confirmation ? 'Trade logged' : trade ? 'Edit Trade' : fromSignal ? `Log trade from ${fromSignal.display_name || fromSignal.symbol} signal` : 'Log New Trade'}
           </h2>
-          <button onClick={onClose} className="text-text-secondary hover:text-white">
+          <button onClick={confirmation ? onSave : onClose} className="text-text-secondary hover:text-white">
             <X className="w-5 h-5" />
           </button>
         </div>
 
+        {/* ── Confirmation summary (shown after a new trade is opened) ──────── */}
+        {confirmation ? (
+          <div className="p-6 space-y-5">
+            <div className="flex flex-col items-center text-center gap-2">
+              <div className="w-14 h-14 rounded-full bg-success/10 border border-success/30 flex items-center justify-center">
+                <CheckCircle className="w-7 h-7 text-success" />
+              </div>
+              <p className="text-white font-bold text-lg">Logged &amp; now being monitored</p>
+              <p className="text-text-secondary text-sm">
+                {confirmation.direction} {getPair(confirmation.symbol).display_name} @ {formatPairPrice(confirmation.symbol, confirmation.entry)}
+              </p>
+            </div>
+
+            <div className="bg-background border border-border rounded-lg divide-y divide-border">
+              <div className="flex justify-between px-4 py-3">
+                <span className="text-text-secondary text-sm">Position Size</span>
+                <span className="text-accent font-mono font-bold">{confirmation.lots.toFixed(2)} lots</span>
+              </div>
+              <div className="flex justify-between px-4 py-3">
+                <span className="text-text-secondary text-sm">At Risk (if SL hits)</span>
+                <span className="text-danger font-mono font-bold">${confirmation.risk.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between px-4 py-3">
+                <span className="text-text-secondary text-sm">Balance Used</span>
+                <span className="text-white font-mono">${accountBal.toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2 px-3 py-2.5 bg-accent/10 border border-accent/30 rounded-lg">
+              <Eye className="w-4 h-4 text-accent flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-text-secondary">
+                This trade is now watched in real time. You&apos;ll be alerted if it reverses from a profit peak, enters a dangerous session (e.g. Gold in Asian hours), nears your TP, or has high-impact news incoming — so you can move your stop in time.
+              </p>
+            </div>
+
+            <button
+              onClick={onSave}
+              className="w-full py-2.5 bg-accent text-black font-bold rounded-lg hover:bg-accent/90 text-sm transition-colors"
+            >
+              Done
+            </button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {/* ── Take-trade hero: balance input + live lot size ──────────────
+              When taking a trade from a signal, the balance is the first
+              thing the user touches. We ask 'right now' because demo
+              balances drift after every trade. */}
+          {takingFromSignal && (
+            <div className="bg-accent/5 border border-accent/30 rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Wallet className="w-4 h-4 text-accent" />
+                <p className="text-white font-semibold text-sm">Your balance right now</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-text-secondary font-mono text-lg">$</span>
+                <input
+                  type="number"
+                  value={accountBal}
+                  onChange={e => setAccountBal(parseFloat(e.target.value) || 0)}
+                  className="flex-1 bg-background border border-border rounded-lg px-3 py-2.5 text-white font-mono text-lg focus:border-accent outline-none"
+                  autoFocus
+                />
+              </div>
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-text-secondary">Risk per trade</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range" min="0.25" max="5" step="0.25" value={riskPct}
+                    onChange={e => setRiskPct(parseFloat(e.target.value))}
+                    className="w-32 accent-accent"
+                  />
+                  <span className={cn('font-mono font-semibold w-10 text-right',
+                    riskPct <= 1 ? 'text-success' : riskPct <= 2 ? 'text-accent' : 'text-yellow-400'
+                  )}>{riskPct}%</span>
+                </div>
+              </div>
+              {/* Live result */}
+              {suggestedLot != null && moneyAtRisk != null ? (
+                <div className="bg-background border border-border rounded-lg px-4 py-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-text-secondary text-xs">Trade this size</p>
+                    <p className="text-accent font-mono font-bold text-2xl">{suggestedLot.toFixed(2)} <span className="text-sm font-normal">lots</span></p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-text-secondary text-xs">You risk</p>
+                    <p className="text-danger font-mono font-bold text-lg">${moneyAtRisk.toFixed(2)}</p>
+                    <p className="text-text-secondary text-xs">{slPips?.toFixed(0)} pip SL</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-text-secondary text-xs">Set a stop loss below to compute your lot size.</p>
+              )}
+            </div>
+          )}
+
           {/* Pair */}
           <div>
             <label className="text-text-secondary text-xs mb-1 block">Pair</label>
@@ -255,7 +391,7 @@ export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultA
               <label className="text-text-secondary text-xs mb-1 block">Lot Size</label>
               <input
                 type="number" step="0.01" value={lotSize}
-                onChange={e => setLotSize(e.target.value)}
+                onChange={e => { setLotSize(e.target.value); setAutoLot(false); }}
                 className="w-full bg-background border border-border rounded-lg px-3 py-2 text-white font-mono text-sm focus:border-accent outline-none"
                 required
               />
@@ -289,8 +425,9 @@ export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultA
             </div>
           </div>
 
-          {/* Lot-size suggestion */}
-          {slPips != null && slPips > 0 && (
+          {/* Lot-size suggestion — hidden when the take-trade hero is shown
+              (the hero already covers balance + lot live). */}
+          {!takingFromSignal && slPips != null && slPips > 0 && (
             <div className="bg-background border border-border rounded-lg p-3 space-y-2">
               <div className="flex items-center justify-between gap-3 text-xs">
                 <span className="text-text-secondary">Position sizer (assumes balance $</span>
@@ -430,10 +567,11 @@ export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultA
               type="submit" disabled={saving}
               className="flex-1 py-2.5 bg-accent text-black font-bold rounded-lg hover:bg-accent/90 text-sm transition-colors disabled:opacity-50"
             >
-              {saving ? 'Saving...' : 'Save Trade'}
+              {saving ? 'Saving...' : takingFromSignal ? 'Take Trade & Monitor' : 'Save Trade'}
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );
