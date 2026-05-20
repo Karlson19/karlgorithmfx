@@ -73,8 +73,17 @@ export default function SystemStatus() {
       </button>
 
       {open && health && (
-        <div className="absolute right-0 mt-1 w-80 bg-card border border-border rounded-lg shadow-xl z-50 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <>
+          {/* Mobile backdrop */}
+          <div className="fixed inset-0 z-40 bg-black/50 sm:hidden" onClick={() => setOpen(false)} />
+          <div className={cn(
+            'bg-card border border-border shadow-2xl overflow-y-auto z-50',
+            // Mobile bottom sheet
+            'fixed inset-x-3 bottom-3 rounded-xl max-h-[70vh]',
+            // Desktop anchored dropdown
+            'sm:absolute sm:inset-auto sm:right-0 sm:bottom-auto sm:mt-1 sm:w-80 sm:rounded-lg sm:max-h-none'
+          )}>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border sticky top-0 bg-card">
             <div className="flex items-center gap-2">
               <Icon className={cn('w-4 h-4', iconColor)} />
               <span className={cn('text-sm font-bold capitalize', iconColor)}>{status}</span>
@@ -174,7 +183,8 @@ export default function SystemStatus() {
               Calibration kicks in at 8 closed signals per band. Below that, the heuristic floor applies.
             </p>
           </div>
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

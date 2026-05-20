@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { formatPairPrice, getPair, PAIRS, ENABLED_SYMBOLS } from '@/lib/pairs';
 import api from '@/lib/api';
 import { format, formatDistanceStrict } from 'date-fns';
-import { TrendingUp, TrendingDown, Trophy, XCircle, Clock, BarChart2, ChevronDown, Hourglass } from 'lucide-react';
+import { TrendingUp, TrendingDown, Trophy, XCircle, Clock, BarChart2, ChevronDown, Hourglass, X } from 'lucide-react';
 
 // ─── Outcome badge ────────────────────────────────────────────────────────────
 function OutcomeBadge({ outcome }: { outcome: SignalOutcome | null }) {
@@ -64,19 +64,35 @@ function PerformancePairSelector({ value, onChange }: { value: string; onChange:
         <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="absolute right-0 mt-1 w-48 bg-card border border-border rounded-lg shadow-xl z-30 overflow-hidden">
-          {['ALL', ...ENABLED_SYMBOLS].map(s => (
-            <button
-              key={s}
-              onClick={() => { onChange(s); setOpen(false); }}
-              className={cn('w-full text-left px-3 py-2 text-sm border-b border-border/50 last:border-0 transition-colors font-mono',
-                s === value ? 'bg-accent/10 text-accent' : 'text-white hover:bg-background/50'
-              )}
-            >
-              {s === 'ALL' ? 'All Pairs' : (PAIRS[s]?.display_name || s)}
-            </button>
-          ))}
-        </div>
+        <>
+          {/* Mobile backdrop */}
+          <div className="fixed inset-0 z-40 bg-black/50 sm:hidden" onClick={() => setOpen(false)} />
+          <div className={cn(
+            'bg-card border border-border shadow-2xl overflow-y-auto',
+            // Mobile bottom sheet
+            'fixed inset-x-3 bottom-3 rounded-xl max-h-[60vh] z-50',
+            // Desktop anchored dropdown
+            'sm:absolute sm:inset-auto sm:right-0 sm:bottom-auto sm:mt-1 sm:w-48 sm:rounded-lg sm:max-h-none sm:z-30'
+          )}>
+            <div className="sm:hidden flex items-center justify-between px-4 py-3 border-b border-border sticky top-0 bg-card">
+              <span className="text-white font-bold text-sm">Filter by pair</span>
+              <button type="button" onClick={() => setOpen(false)} className="text-text-secondary hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {['ALL', ...ENABLED_SYMBOLS].map(s => (
+              <button
+                key={s}
+                onClick={() => { onChange(s); setOpen(false); }}
+                className={cn('w-full text-left px-4 sm:px-3 py-3 sm:py-2 text-sm border-b border-border/50 last:border-0 transition-colors font-mono',
+                  s === value ? 'bg-accent/10 text-accent' : 'text-white hover:bg-background/50'
+                )}
+              >
+                {s === 'ALL' ? 'All Pairs' : (PAIRS[s]?.display_name || s)}
+              </button>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
