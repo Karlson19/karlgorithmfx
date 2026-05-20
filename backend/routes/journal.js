@@ -359,4 +359,19 @@ router.get('/alerts', async (req, res) => {
   }
 });
 
+// ─── GET /api/journal/monitor ────────────────────────────────────────────────
+// Rich per-trade monitor snapshot for the Monitor page: every open trade
+// with its live P&L, peak, progress to TP, SL-at-breakeven flag, and alerts.
+router.get('/monitor', async (req, res) => {
+  try {
+    const user = await getUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    const snapshot = await tradeMonitor.getMonitorSnapshot(user.id);
+    res.json(snapshot);
+  } catch (err) {
+    console.error('monitor error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

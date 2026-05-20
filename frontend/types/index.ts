@@ -448,6 +448,33 @@ export interface TradeAlertsResponse {
   timestamp: string;
 }
 
+// Live per-trade monitor row (Monitor page).
+export interface MonitorTrade {
+  id: string;
+  symbol: string;
+  display_name: string;
+  direction: 'BUY' | 'SELL';
+  entry_price: number;
+  stop_loss: number | null;
+  take_profit_1: number | null;
+  lot_size: number;
+  opened_at: string;
+  current_price: number | null;
+  unrealized_pnl: number | null;
+  peak_pnl: number;
+  progress_to_tp1: number | null;
+  sl_at_breakeven: boolean;
+  session: string;
+  alerts: TradeAlert[];
+  worst_severity: 'none' | 'info' | 'warning' | 'critical';
+}
+
+export interface MonitorSnapshot {
+  trades: MonitorTrade[];
+  session: string;
+  timestamp: string;
+}
+
 export interface SystemHealth {
   status: 'ok' | 'degraded' | 'critical';
   reasons: string[];

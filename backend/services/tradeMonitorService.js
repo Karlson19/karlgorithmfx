@@ -303,18 +303,10 @@ async function alertsForTrade(trade, ctx) {
   return alerts;
 }
 
-// ─── Main entrypoint ─────────────────────────────────────────────────────────
-async function analyseOpenTrades(userId) {
-  // Fetch open trades for the user
-  const { data: openTrades, error } = await supabase
-    .from('trades')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('status', 'open');
-  if (error || !openTrades || openTrades.length === 0) return [];
-
-  // Pre-fetch context once per unique symbol — candles + volatility + news
-  const symbols = Array.from(new Set(openTrades.map(t => t.pair)));
+// ─── Shared context builder ──────────────────────────────────────────────────
+// Fetches candles + volatility + news once per unique symbol so we don't
+// hammer the price API per-trade.
+async function buildContext(symbols) {
   const candleMap = {};
   const volMap = {};
 
@@ -332,24 +324,102 @@ async function analyseOpenTrades(userId) {
   let news = [];
   try { news = await newsService.fetchNews(); } catch {}
 
-  const ctx = {
-    sessionLabel: currentSessionLabel(),
-    candleMap,
-    volMap,
-    news,
-  };
+  return { sessionLabel: currentSessionLabel(), candleMap, volMap, news };
+}
+
+async function fetchOpenTrades(userId) {
+  const { data, error } = await supabase
+    .from('trades')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('status', 'open');
+  if (error || !data) return [];
+  return data;
+}
+
+// ─── Flat alerts list (for the floating panel) ───────────────────────────────
+async function analyseOpenTrades(userId) {
+  const openTrades = await fetchOpenTrades(userId);
+  if (openTrades.length === 0) return [];
+
+  const symbols = Array.from(new Set(openTrades.map(t => t.pair)));
+  const ctx = await buildContext(symbols);
 
   const allAlerts = [];
   for (const trade of openTrades) {
     const tradeAlerts = await alertsForTrade(trade, ctx);
     for (const a of tradeAlerts) allAlerts.push(a);
   }
-
   return allAlerts;
+}
+
+// ─── Rich monitor snapshot (for the Monitor page) ────────────────────────────
+// Returns every open trade enriched with its LIVE state — current price,
+// unrealized P&L, peak P&L, progress to TP1, whether SL is at break-even —
+// plus the alerts attached to it. This is what the user goes to in order
+// to SEE that their trades are being watched, even when nothing is wrong.
+async function getMonitorSnapshot(userId) {
+  const openTrades = await fetchOpenTrades(userId);
+  if (openTrades.length === 0) {
+    return { trades: [], session: currentSessionLabel(), timestamp: new Date().toISOString() };
+  }
+
+  const symbols = Array.from(new Set(openTrades.map(t => t.pair)));
+  const ctx = await buildContext(symbols);
+
+  const trades = [];
+  for (const trade of openTrades) {
+    const pair = getPair(trade.pair);
+    const candles = ctx.candleMap[trade.pair];
+    const currentPrice = (candles && candles.length > 0)
+      ? candles[candles.length - 1].close
+      : null;
+
+    const pnl = currentPrice != null ? unrealizedPnL(trade, currentPrice) : null;
+    // Peak: read current stored peak, and update it with the live pnl so the
+    // snapshot reflects the high-water mark.
+    let peak = getPeakProfit(trade.id);
+    if (pnl != null) peak = updatePeakProfit(trade.id, pnl);
+    const progress = currentPrice != null ? progressToTP1(trade, currentPrice) : null;
+    const slAtBE = isSLAtBreakevenOrBetter(trade);
+    const alerts = await alertsForTrade(trade, ctx);
+
+    trades.push({
+      id: trade.id,
+      symbol: trade.pair,
+      display_name: pair ? pair.display_name : trade.pair,
+      direction: trade.direction,
+      entry_price: parseFloat(trade.entry_price),
+      stop_loss: trade.stop_loss != null ? parseFloat(trade.stop_loss) : null,
+      take_profit_1: trade.take_profit_1 != null ? parseFloat(trade.take_profit_1)
+        : trade.take_profit != null ? parseFloat(trade.take_profit) : null,
+      lot_size: parseFloat(trade.lot_size),
+      opened_at: trade.opened_at,
+      current_price: currentPrice,
+      unrealized_pnl: pnl,
+      peak_pnl: peak,
+      progress_to_tp1: progress != null ? Math.round(progress) : null,
+      sl_at_breakeven: slAtBE,
+      session: ctx.sessionLabel,
+      alerts,
+      // Highest alert severity for this trade (for the row badge/colour)
+      worst_severity: alerts.reduce((worst, a) => {
+        const rank = { info: 1, warning: 2, critical: 3 };
+        return rank[a.severity] > rank[worst] ? a.severity : worst;
+      }, 'none'),
+    });
+  }
+
+  // Sort: trades with the worst alerts first.
+  const sevRank = { critical: 3, warning: 2, info: 1, none: 0 };
+  trades.sort((a, b) => sevRank[b.worst_severity] - sevRank[a.worst_severity]);
+
+  return { trades, session: currentSessionLabel(), timestamp: new Date().toISOString() };
 }
 
 module.exports = {
   analyseOpenTrades,
+  getMonitorSnapshot,
   resetPeak,
   unrealizedPnL,
   progressToTP1,

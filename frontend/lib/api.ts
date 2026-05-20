@@ -163,6 +163,12 @@ const api = {
     const res = await axios.get(`${BASE_URL}/api/journal/alerts`, { headers });
     return res.data;
   },
+
+  async getTradeMonitor() {
+    const headers = await getAuthHeader();
+    const res = await axios.get(`${BASE_URL}/api/journal/monitor`, { headers });
+    return res.data;
+  },
 };
 
 export default api;

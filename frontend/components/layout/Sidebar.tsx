@@ -1,13 +1,15 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Target, BookOpen, Calculator, Newspaper, Settings, LogOut, TrendingUp, X } from 'lucide-react';
+import { LayoutDashboard, Target, BookOpen, Calculator, Newspaper, Settings, LogOut, TrendingUp, X, Activity } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { useTradeAlerts } from '@/hooks/useTradeAlerts';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/signals', label: 'Signals', icon: Target },
+  { href: '/monitor', label: 'Monitor', icon: Activity },
   { href: '/journal', label: 'Journal', icon: BookOpen },
   { href: '/calculator', label: 'Calculator', icon: Calculator },
   { href: '/news', label: 'News', icon: Newspaper },
@@ -21,6 +23,11 @@ interface SidebarProps {
 export default function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { signOut } = useAuth();
+  // Surface a live alert count on the Monitor nav item so the user knows
+  // when an open trade needs attention without opening the page.
+  const { alerts } = useTradeAlerts();
+  const criticalCount = alerts.filter(a => a.severity === 'critical').length;
+  const alertCount = alerts.length;
 
   return (
     <>
@@ -62,7 +69,16 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               )}
             >
               <Icon className="w-5 h-5 flex-shrink-0" />
-              {label}
+              <span className="flex-1">{label}</span>
+              {/* Live alert badge on the Monitor item */}
+              {href === '/monitor' && alertCount > 0 && (
+                <span className={cn(
+                  'text-xs font-bold px-1.5 py-0.5 rounded-full min-w-5 text-center',
+                  criticalCount > 0 ? 'bg-danger text-white' : 'bg-yellow-400 text-black'
+                )}>
+                  {alertCount}
+                </span>
+              )}
             </Link>
           ))}
         </nav>
