@@ -22,6 +22,31 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+// ─── Fetch handler ───────────────────────────────────────────────────────────
+// Network-passthrough only. We deliberately DO NOT cache app data — this is a
+// live trading tool and stale prices/signals would be dangerous. The handler
+// exists primarily because Chrome requires a service worker with a fetch
+// handler before it will offer "Install app" / fire beforeinstallprompt.
+// For navigations we add a tiny offline fallback message so a dropped
+// connection doesn't show the browser's ugly error page.
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return; // never touch POST/PUT/etc.
+  if (req.mode === 'navigate') {
+    event.respondWith(
+      fetch(req).catch(() =>
+        new Response(
+          '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+          '<body style="background:#0a0a0a;color:#a1a1aa;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:2rem">' +
+          '<div><h2 style="color:#fff">You’re offline</h2><p>KarlFX needs a connection for live data. Reconnect and reopen.</p></div>',
+          { headers: { 'Content-Type': 'text/html' } }
+        )
+      )
+    );
+  }
+  // Non-navigation GETs: let the browser handle them normally (no respondWith).
+});
+
 // ─── Push: show a notification ───────────────────────────────────────────────
 self.addEventListener('push', (event) => {
   let payload = {};
