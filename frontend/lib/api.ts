@@ -169,6 +169,27 @@ const api = {
     const res = await axios.get(`${BASE_URL}/api/journal/monitor`, { headers });
     return res.data;
   },
+
+  // ── Web Push ─────────────────────────────────────────────────────────────
+  async getVapidPublicKey() {
+    const res = await axios.get(`${BASE_URL}/api/push/vapid-public-key`);
+    return res.data;
+  },
+  async savePushSubscription(subscription: unknown) {
+    const headers = await getAuthHeader();
+    const res = await axios.post(`${BASE_URL}/api/push/subscribe`, { subscription }, { headers });
+    return res.data;
+  },
+  async removePushSubscription(endpoint: string) {
+    const headers = await getAuthHeader();
+    const res = await axios.post(`${BASE_URL}/api/push/unsubscribe`, { endpoint }, { headers });
+    return res.data;
+  },
+  async sendTestPush() {
+    const headers = await getAuthHeader();
+    const res = await axios.post(`${BASE_URL}/api/push/test`, null, { headers });
+    return res.data;
+  },
 };
 
 export default api;

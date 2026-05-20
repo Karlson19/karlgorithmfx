@@ -13,11 +13,15 @@ const newsRoutes = require('./routes/news');
 const analysisRoutes = require('./routes/analysis');
 const marketRoutes = require('./routes/market');
 const healthRoutes = require('./routes/health');
+const pushRoutes = require('./routes/push');
 
 const priceService = require('./services/priceService');
 const signalsOrchestrator = require('./services/signalsOrchestrator');
 const signalHistoryService = require('./services/signalHistoryService');
 const calibration = require('./services/calibrationService');
+const tradeMonitor = require('./services/tradeMonitorService');
+const pushService = require('./services/pushService');
+const cache = require('./utils/cache');
 const websocketService = require('./services/websocketService');
 const { listEnabledSymbols, PRIMARY_SYMBOL } = require('./config/pairs');
 
@@ -39,6 +43,7 @@ app.use('/api/news', newsRoutes);
 app.use('/api/analysis', analysisRoutes);
 app.use('/api/market', marketRoutes);
 app.use('/api/health', healthRoutes);
+app.use('/api/push', pushRoutes);
 
 // Legacy short health check — kept for any external pingers expecting it.
 app.get('/health', (req, res) => res.json({ status: 'ok', pairs: listEnabledSymbols() }));
@@ -90,6 +95,53 @@ cron.schedule('*/30 * * * *', async () => {
     await calibration.refreshCalibration();
   } catch (err) {
     console.error('Cron evaluate/calibrate error:', err.message);
+  }
+});
+
+// ── Trade-monitor push cron ───────────────────────────────────────────────────
+// Every 3 minutes: for each user who has a push subscription, analyse their
+// open trades and send a BACKGROUND PUSH for any NEW critical/warning alert.
+// This is what fires the gold-reversal notification at 00:30 even when the
+// PWA is closed and the phone is locked.
+//
+// Dedupe: each alert id is cached after pushing so we don't re-notify the
+// same condition every 3 minutes. TTL 90 min — long enough to avoid spam,
+// short enough that a recurring condition eventually re-pings.
+//
+// NOTE: on Render's free tier the process sleeps after ~15 min idle, which
+// pauses this cron. For reliable overnight push, keep the backend warm
+// (paid tier or an external uptime pinger hitting /health).
+const PUSH_DEDUPE_TTL = 90 * 60; // seconds
+cron.schedule('*/3 * * * *', async () => {
+  try {
+    if (!pushService.isConfigured()) return; // VAPID not set up yet
+    const userIds = await pushService.listSubscribedUserIds();
+    if (userIds.length === 0) return;
+
+    for (const userId of userIds) {
+      let alerts = [];
+      try {
+        alerts = await tradeMonitor.analyseOpenTrades(userId);
+      } catch { continue; }
+      // Only push critical + warning (info is in-app only — no need to buzz
+      // the phone for "you're 30% to TP").
+      const pushable = alerts.filter(a => a.severity === 'critical' || a.severity === 'warning');
+      for (const a of pushable) {
+        const dedupeKey = `pushed:${userId}:${a.id}`;
+        if (cache.get(dedupeKey)) continue; // already notified recently
+        const result = await pushService.sendToUser(userId, {
+          title: a.title,
+          body: a.message,
+          severity: a.severity,
+          symbol: a.symbol,
+          tag: a.id,
+          url: '/monitor',
+        });
+        if (result.sent > 0) cache.set(dedupeKey, true, PUSH_DEDUPE_TTL);
+      }
+    }
+  } catch (err) {
+    console.error('Cron push error:', err.message);
   }
 });
 

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { TradeAlert, TradeAlertSeverity } from '@/types';
 import { useTradeAlerts, requestNotificationPermission } from '@/hooks/useTradeAlerts';
+import { subscribeToPush } from '@/lib/push';
 import { cn } from '@/lib/utils';
 import { formatPairPrice, getPair } from '@/lib/pairs';
 import {
@@ -121,6 +122,11 @@ export default function TradeAlertsPanel() {
   async function handleEnableNotifications() {
     const result = await requestNotificationPermission();
     setNotifPermission(result);
+    // After permission, register the background push subscription so alerts
+    // fire even when the app is closed / phone locked.
+    if (result === 'granted') {
+      await subscribeToPush();
+    }
   }
 
   if (alerts.length === 0) return null;

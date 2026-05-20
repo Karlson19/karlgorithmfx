@@ -1,10 +1,13 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserPrefs } from '@/hooks/useUserPrefs';
 import { ENABLED_SYMBOLS, PAIRS } from '@/lib/pairs';
-import { Settings, LogOut, Check } from 'lucide-react';
+import { requestNotificationPermission } from '@/hooks/useTradeAlerts';
+import { subscribeToPush, pushSupported, isStandalone, isIOS } from '@/lib/push';
+import api from '@/lib/api';
+import { Settings, LogOut, Check, Bell, BellRing, Share, PlusSquare } from 'lucide-react';
 
 export default function SettingsPage() {
   const { user, signOut } = useAuth();
@@ -15,6 +18,50 @@ export default function SettingsPage() {
   const [maxDailyLoss, setMaxDailyLoss] = useState(String(prefs.max_daily_loss_usd));
   const [maxOpenPositions, setMaxOpenPositions] = useState(String(prefs.max_concurrent_positions));
   const [saved, setSaved] = useState(false);
+
+  // ── Notification / push state ──────────────────────────────────────────────
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission>('default');
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMsg, setPushMsg] = useState('');
+  const [standalone, setStandalone] = useState(false);
+  const [supported, setSupported] = useState(true);
+  const [ios, setIos] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) setNotifPerm(Notification.permission);
+    setStandalone(isStandalone());
+    setSupported(pushSupported());
+    setIos(isIOS());
+  }, []);
+
+  async function enablePush() {
+    setPushBusy(true);
+    setPushMsg('');
+    try {
+      const perm = await requestNotificationPermission();
+      setNotifPerm(perm);
+      if (perm !== 'granted') { setPushMsg('Permission was not granted.'); return; }
+      const res = await subscribeToPush();
+      if (res.ok) setPushMsg('Push enabled on this device ✓');
+      else if (res.reason === 'no-vapid-key') setPushMsg('Server push keys not configured yet.');
+      else setPushMsg('Could not enable push: ' + (res.reason || 'unknown'));
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  async function testPush() {
+    setPushBusy(true);
+    setPushMsg('');
+    try {
+      const res = await api.sendTestPush();
+      setPushMsg(res?.sent > 0 ? 'Test sent — check your notifications.' : 'No subscription found on the server. Tap Enable first.');
+    } catch {
+      setPushMsg('Test failed.');
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   function handleSave() {
     const bal = parseFloat(balance);
@@ -126,6 +173,73 @@ export default function SettingsPage() {
               {saved ? <><Check className="w-4 h-4" /> Saved</> : 'Save Settings'}
             </button>
           </div>
+        </div>
+
+        {/* ── Notifications / Push ── */}
+        <div className="bg-card border border-border rounded-xl p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Bell className="w-5 h-5 text-accent" />
+            <h2 className="text-white font-bold">Push Notifications</h2>
+          </div>
+
+          {!supported ? (
+            <p className="text-text-secondary text-sm">
+              This browser doesn&apos;t support push notifications.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-text-secondary text-sm">
+                Get alerted on this device when an open trade reverses from profit, enters a dangerous
+                session (e.g. Gold in Asian hours), nears your TP, or has news incoming — even when the
+                app is closed.
+              </p>
+
+              {/* iOS install requirement */}
+              {ios && !standalone && (
+                <div className="px-3 py-3 bg-yellow-400/10 border border-yellow-400/30 rounded-lg text-xs space-y-1.5">
+                  <p className="text-yellow-400 font-semibold flex items-center gap-1.5">
+                    <PlusSquare className="w-4 h-4" /> Install to Home Screen first
+                  </p>
+                  <p className="text-text-secondary">
+                    On iPhone, push only works after you add KarlFX to your home screen:
+                  </p>
+                  <p className="text-text-secondary flex items-center gap-1">
+                    Tap <Share className="w-3.5 h-3.5 inline" /> Share → <span className="text-white">Add to Home Screen</span> → open KarlFX from the new icon → come back here and tap Enable.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={enablePush}
+                  disabled={pushBusy || (ios && !standalone)}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-accent text-black font-bold rounded-lg hover:bg-accent/90 transition-colors text-sm disabled:opacity-50"
+                >
+                  <BellRing className="w-4 h-4" />
+                  {notifPerm === 'granted' ? 'Re-enable on this device' : 'Enable Notifications'}
+                </button>
+                {notifPerm === 'granted' && (
+                  <button
+                    onClick={testPush}
+                    disabled={pushBusy}
+                    className="flex items-center gap-2 px-4 py-2.5 border border-border text-text-secondary rounded-lg hover:text-white hover:border-zinc-600 transition-colors text-sm disabled:opacity-50"
+                  >
+                    Send test
+                  </button>
+                )}
+              </div>
+
+              <div className="text-xs space-y-1">
+                <p className="text-text-secondary">
+                  Status: <span className={notifPerm === 'granted' ? 'text-success' : notifPerm === 'denied' ? 'text-danger' : 'text-yellow-400'}>
+                    {notifPerm === 'granted' ? 'enabled' : notifPerm === 'denied' ? 'blocked (enable in browser site settings)' : 'not enabled'}
+                  </span>
+                  {standalone && <span className="text-success ml-2">· installed ✓</span>}
+                </p>
+                {pushMsg && <p className="text-accent">{pushMsg}</p>}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-card border border-border rounded-xl p-6">

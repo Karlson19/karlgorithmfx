@@ -1,0 +1,47 @@
+{
+  "name": "KarlgorithmFX — Trading Signals & Monitor",
+  "short_name": "KarlFX",
+  "description": "Multi-pair forex + gold signals with real-time open-trade risk monitoring and push alerts.",
+  "id": "/dashboard",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Trade Monitor",
+      "short_name": "Monitor",
+      "description": "Watch your open trades live",
+      "url": "/monitor"
+    },
+    {
+      "name": "Signals",
+      "short_name": "Signals",
+      "description": "Latest multi-pair signals",
+      "url": "/signals"
+    }
+  ]
+}
