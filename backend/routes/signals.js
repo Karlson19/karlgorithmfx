@@ -90,6 +90,24 @@ router.get('/calibration', async (req, res) => {
   }
 });
 
+// POST /api/signals/re-evaluate  → ONE-SHOT: walk M15 candles for every stored
+// signal and recompute outcomes. Use this once after deploying the candle-
+// walking evaluator to correct historical rows that were wrongly marked by
+// the old "sample current price" approach.
+//
+// Pass ?includeClosed=false to only re-process still-open signals (faster).
+router.post('/re-evaluate', async (req, res) => {
+  try {
+    const includeClosed = req.query.includeClosed !== 'false';
+    const result = await signalHistoryService.reEvaluateAllSignals({ includeClosed });
+    // Also invalidate calibration so the table picks up the corrected stats.
+    try { await calibration.refreshCalibration(); } catch {}
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/signals/strategy-stats  → win-rate per named strategy (cross-pair + per-pair)
 router.get('/strategy-stats', async (req, res) => {
   try {

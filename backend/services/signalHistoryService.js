@@ -38,10 +38,135 @@ async function saveSignal(signal) {
   return data;
 }
 
-// ─── Evaluate open signals against current price (per-symbol) ────────────────
-async function evaluateOpenSignals() {
-  const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+// ─── Candle-walking outcome evaluation ───────────────────────────────────────
+// For each open signal, walk M15 candles between signal creation time and
+// "now". Determine which of SL / TP1 / TP2 is touched FIRST, in time order.
+// This replaces the broken "sample current price" approach which produced
+// nonsense outcomes for any signal whose price visited a level and reversed
+// before the next cron run.
+//
+// Ambiguity inside a single candle: when one bar's range contains BOTH the
+// SL AND a TP level, we can't know intra-bar order without sub-M15 data.
+// Conservative rule: assume the SL hit first. Better to under-state wins
+// than overstate them when measuring algorithm performance.
+//
+// Returns the outcome decision so the caller (evaluateOpenSignals OR the
+// one-shot backfill route) can persist it. Pure function — no DB writes.
+async function determineOutcomeFromCandles(sig, candles) {
+  const sigStartSec = Math.floor(new Date(sig.created_at).getTime() / 1000);
+  // Only consider candles that opened AT or AFTER the signal time.
+  // (A candle whose open is BEFORE signal time may have already had its
+  // SL/TP-side wick happen before our signal even existed.)
+  const relevant = candles.filter(c => c.time >= sigStartSec);
 
+  for (const c of relevant) {
+    if (sig.direction === 'BUY') {
+      const slHit = sig.stop_loss     != null && c.low  <= sig.stop_loss;
+      const tp1Hit = sig.take_profit_1 != null && c.high >= sig.take_profit_1;
+      const tp2Hit = sig.take_profit_2 != null && c.high >= sig.take_profit_2;
+
+      // Same-candle ambiguity: SL + TP both in this bar's range → SL first.
+      if (slHit && (tp1Hit || tp2Hit)) {
+        return { outcome: 'LOSS', outcome_price: sig.stop_loss, outcome_at_sec: c.time };
+      }
+      if (slHit) return { outcome: 'LOSS', outcome_price: sig.stop_loss, outcome_at_sec: c.time };
+      // Prefer the higher target — if both TPs hit in the same bar, the
+      // bigger win is consistent with how the price would have unfolded
+      // (TP1 then TP2) since they're on the same side.
+      if (tp2Hit) return { outcome: 'WIN_TP2', outcome_price: sig.take_profit_2, outcome_at_sec: c.time };
+      if (tp1Hit) return { outcome: 'WIN_TP1', outcome_price: sig.take_profit_1, outcome_at_sec: c.time };
+    } else if (sig.direction === 'SELL') {
+      const slHit = sig.stop_loss     != null && c.high >= sig.stop_loss;
+      const tp1Hit = sig.take_profit_1 != null && c.low  <= sig.take_profit_1;
+      const tp2Hit = sig.take_profit_2 != null && c.low  <= sig.take_profit_2;
+
+      if (slHit && (tp1Hit || tp2Hit)) {
+        return { outcome: 'LOSS', outcome_price: sig.stop_loss, outcome_at_sec: c.time };
+      }
+      if (slHit) return { outcome: 'LOSS', outcome_price: sig.stop_loss, outcome_at_sec: c.time };
+      if (tp2Hit) return { outcome: 'WIN_TP2', outcome_price: sig.take_profit_2, outcome_at_sec: c.time };
+      if (tp1Hit) return { outcome: 'WIN_TP1', outcome_price: sig.take_profit_1, outcome_at_sec: c.time };
+    }
+  }
+
+  // No level hit in any candle yet.
+  return null;
+}
+
+// Worker: take a list of signals and decide outcomes for each by candle-walk.
+// Persists the decision. Returns counts for logging.
+async function processSignalBatch(signals) {
+  if (!signals || signals.length === 0) return { total: 0, decided: 0, expired: 0 };
+
+  // Group signals by symbol so we only fetch candles once per pair.
+  const bySymbol = {};
+  for (const s of signals) {
+    const sym = s.symbol || PRIMARY_SYMBOL;
+    if (!bySymbol[sym]) bySymbol[sym] = [];
+    bySymbol[sym].push(s);
+  }
+
+  // For each pair, fetch M15 candles wide enough to cover the oldest open
+  // signal. M15 gives reasonable intra-trade resolution; with 24h max age
+  // that's at most 96 candles per pair.
+  const candleMap = {};
+  await Promise.all(Object.keys(bySymbol).map(async sym => {
+    try {
+      candleMap[sym] = await priceService.fetchHistoricalData('15min', 120, sym);
+    } catch (err) {
+      console.warn(`[evaluateOpenSignals] no M15 candles for ${sym}:`, err.message);
+      candleMap[sym] = null;
+    }
+  }));
+
+  let decided = 0;
+  let expired = 0;
+
+  for (const sig of signals) {
+    const sym = sig.symbol || PRIMARY_SYMBOL;
+    const candles = candleMap[sym];
+
+    let result = null;
+    if (Array.isArray(candles) && candles.length > 0) {
+      result = await determineOutcomeFromCandles(sig, candles);
+    }
+
+    const ageHours = (Date.now() - new Date(sig.created_at).getTime()) / 3600000;
+
+    if (result) {
+      await supabase
+        .from('signals')
+        .update({
+          outcome: result.outcome,
+          outcome_price: result.outcome_price,
+          outcome_at: new Date(result.outcome_at_sec * 1000).toISOString(),
+        })
+        .eq('id', sig.id);
+      decided++;
+    } else if (ageHours > 24) {
+      // No level was ever hit AND the signal has aged out → expire it.
+      // outcome_price stays null (no actual hit price).
+      await supabase
+        .from('signals')
+        .update({
+          outcome: 'EXPIRED',
+          outcome_price: null,
+          outcome_at: new Date().toISOString(),
+        })
+        .eq('id', sig.id);
+      expired++;
+    }
+    // else: still open, leave alone — next run will try again.
+  }
+
+  return { total: signals.length, decided, expired };
+}
+
+// ─── Cron-callable: evaluate open signals ────────────────────────────────────
+async function evaluateOpenSignals() {
+  // Only consider signals at least 15 min old so we have at least one full
+  // M15 candle since they were generated.
+  const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
   const { data: openSignals, error } = await supabase
     .from('signals')
     .select('*')
@@ -49,55 +174,26 @@ async function evaluateOpenSignals() {
     .lt('created_at', cutoff);
 
   if (error || !openSignals || openSignals.length === 0) return;
-
-  // Fetch current price for every distinct symbol we have open signals on,
-  // in parallel. Falls back to PRIMARY_SYMBOL for legacy rows.
-  const symbols = Array.from(new Set(
-    openSignals.map(s => s.symbol || PRIMARY_SYMBOL)
-  ));
-  const priceMap = {};
-  await Promise.all(symbols.map(async sym => {
-    try {
-      const p = await priceService.fetchLivePrice(sym);
-      if (p) priceMap[sym] = p.price;
-    } catch { /* leave priceMap[sym] undefined → signal stays open */ }
-  }));
-
-  const now = new Date().toISOString();
-
-  for (const sig of openSignals) {
-    const sym = sig.symbol || PRIMARY_SYMBOL;
-    const currentPrice = priceMap[sym];
-    if (currentPrice == null) continue; // skip until we get a price next run
-
-    const ageHours = (Date.now() - new Date(sig.created_at).getTime()) / 3600000;
-
-    if (ageHours > 24) {
-      await supabase
-        .from('signals')
-        .update({ outcome: 'EXPIRED', outcome_price: currentPrice, outcome_at: now })
-        .eq('id', sig.id);
-      continue;
-    }
-
-    let outcome = null;
-    if (sig.direction === 'BUY') {
-      if (sig.take_profit_2 && currentPrice >= sig.take_profit_2) outcome = 'WIN_TP2';
-      else if (sig.take_profit_1 && currentPrice >= sig.take_profit_1) outcome = 'WIN_TP1';
-      else if (sig.stop_loss && currentPrice <= sig.stop_loss) outcome = 'LOSS';
-    } else if (sig.direction === 'SELL') {
-      if (sig.take_profit_2 && currentPrice <= sig.take_profit_2) outcome = 'WIN_TP2';
-      else if (sig.take_profit_1 && currentPrice <= sig.take_profit_1) outcome = 'WIN_TP1';
-      else if (sig.stop_loss && currentPrice >= sig.stop_loss) outcome = 'LOSS';
-    }
-
-    if (outcome) {
-      await supabase
-        .from('signals')
-        .update({ outcome, outcome_price: currentPrice, outcome_at: now })
-        .eq('id', sig.id);
-    }
+  const result = await processSignalBatch(openSignals);
+  if (result.decided > 0 || result.expired > 0) {
+    console.log(`[evaluateOpenSignals] processed ${result.total}: ${result.decided} decided, ${result.expired} expired`);
   }
+}
+
+// ─── One-shot: re-evaluate ALL signals (fixes historical wrong outcomes) ─────
+// Call this once after deploying the candle-walking logic. It picks up
+// every signal (open OR previously-closed) and re-decides the outcome from
+// candle data. This corrects historical rows that were wrongly marked WIN/
+// LOSS by the old "sample current price" approach.
+async function reEvaluateAllSignals({ includeClosed = true } = {}) {
+  let query = supabase.from('signals').select('*');
+  if (!includeClosed) query = query.is('outcome', null);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`reEvaluateAllSignals fetch failed: ${error.message}`);
+  if (!data || data.length === 0) return { total: 0, decided: 0, expired: 0 };
+
+  return await processSignalBatch(data);
 }
 
 // ─── History fetch (optionally per-symbol) ───────────────────────────────────
@@ -239,6 +335,7 @@ async function getStrategyStats() {
 module.exports = {
   saveSignal,
   evaluateOpenSignals,
+  reEvaluateAllSignals,
   getSignalHistory,
   getSignalStats,
   getStrategyStats,
