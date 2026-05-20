@@ -1,7 +1,8 @@
 'use client';
 import Link from 'next/link';
 import { Signal } from '@/types';
-import { cn, formatPrice, getSignalBg } from '@/lib/utils';
+import { cn, getSignalBg } from '@/lib/utils';
+import { formatPairPrice } from '@/lib/pairs';
 import { ArrowRight, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 export default function QuickSignal({ signal, loading }: { signal?: Signal | null; loading?: boolean }) {
@@ -36,19 +37,19 @@ export default function QuickSignal({ signal, loading }: { signal?: Signal | nul
         <div className="grid grid-cols-2 gap-3 mb-4 text-sm font-mono">
           <div>
             <span className="text-text-secondary text-xs">Entry</span>
-            <p className="text-white font-semibold">{formatPrice(signal.entry)}</p>
+            <p className="text-white font-semibold">{formatPairPrice(signal.symbol, signal.entry)}</p>
           </div>
           <div>
             <span className="text-text-secondary text-xs">Stop Loss</span>
-            <p className="text-danger font-semibold">{formatPrice(signal.stop_loss)}</p>
+            <p className="text-danger font-semibold">{formatPairPrice(signal.symbol, signal.stop_loss)}</p>
           </div>
           <div>
             <span className="text-text-secondary text-xs">TP1</span>
-            <p className="text-success font-semibold">{formatPrice(signal.take_profit_1)}</p>
+            <p className="text-success font-semibold">{formatPairPrice(signal.symbol, signal.take_profit_1)}</p>
           </div>
           <div>
             <span className="text-text-secondary text-xs">TP2</span>
-            <p className="text-success font-semibold">{formatPrice(signal.take_profit_2)}</p>
+            <p className="text-success font-semibold">{formatPairPrice(signal.symbol, signal.take_profit_2)}</p>
           </div>
         </div>
       )}

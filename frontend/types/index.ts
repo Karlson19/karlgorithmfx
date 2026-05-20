@@ -223,6 +223,10 @@ export interface MTFResult {
 }
 
 export interface Indicators {
+  // Symbol the indicators were computed for. Set by the backend so the
+  // UI can use pair-aware price formatting (gold needs 2 decimals, yen 3,
+  // FX majors 5) without guessing from another source.
+  symbol?: string;
   rsi: IndicatorResult;
   macd: MACDResult;
   ema20: IndicatorResult;

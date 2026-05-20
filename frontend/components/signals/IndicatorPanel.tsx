@@ -1,6 +1,7 @@
 'use client';
 import { Indicators } from '@/types';
-import { cn, getSignalBg, formatPrice } from '@/lib/utils';
+import { cn, getSignalBg } from '@/lib/utils';
+import { formatPairPrice, priceDeltaToPips } from '@/lib/pairs';
 import { CheckCircle, XCircle, Clock, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 interface IndicatorPanelProps {
@@ -164,19 +165,19 @@ export default function IndicatorPanel({ indicators: ind }: IndicatorPanelProps)
         />
         <Row
           label="EMA 20"
-          value={formatPrice(ind.ema20.value)}
+          value={formatPairPrice(ind.symbol, ind.ema20.value)}
           signal={ind.ema20.signal}
           unavailable={!ind.ema20.available}
         />
         <Row
           label="EMA 50"
-          value={formatPrice(ind.ema50.value)}
+          value={formatPairPrice(ind.symbol, ind.ema50.value)}
           signal={ind.ema50.signal}
           unavailable={!ind.ema50.available}
         />
         <Row
           label="EMA 200"
-          value={formatPrice(ind.ema200.value)}
+          value={formatPairPrice(ind.symbol, ind.ema200.value)}
           signal={ind.ema200.signal}
           unavailable={!ind.ema200.available}
         />
@@ -198,7 +199,7 @@ export default function IndicatorPanel({ indicators: ind }: IndicatorPanelProps)
         />
         <Row
           label="Tenkan / Kijun"
-          value={`${formatPrice(ind.ichimoku.tenkan)} / ${formatPrice(ind.ichimoku.kijun)}`}
+          value={`${formatPairPrice(ind.symbol, ind.ichimoku.tenkan)} / ${formatPairPrice(ind.symbol, ind.ichimoku.kijun)}`}
           signal={
             ind.ichimoku.available && ind.ichimoku.tenkan != null && ind.ichimoku.kijun != null
               ? (ind.ichimoku.tenkan > ind.ichimoku.kijun ? 'BUY' : 'SELL')
@@ -208,7 +209,7 @@ export default function IndicatorPanel({ indicators: ind }: IndicatorPanelProps)
         />
         <Row
           label="Span A / B"
-          value={`${formatPrice(ind.ichimoku.span_a)} / ${formatPrice(ind.ichimoku.span_b)}`}
+          value={`${formatPairPrice(ind.symbol, ind.ichimoku.span_a)} / ${formatPairPrice(ind.symbol, ind.ichimoku.span_b)}`}
           signal={
             ind.ichimoku.available && ind.ichimoku.span_a != null && ind.ichimoku.span_b != null
               ? (ind.ichimoku.span_a > ind.ichimoku.span_b ? 'BUY' : 'SELL')
@@ -220,11 +221,11 @@ export default function IndicatorPanel({ indicators: ind }: IndicatorPanelProps)
         <SectionTitle>Volatility</SectionTitle>
         <Row
           label="Bollinger Bands"
-          value={formatPrice(ind.bollinger.middle)}
+          value={formatPairPrice(ind.symbol, ind.bollinger.middle)}
           signal={ind.bollinger.signal}
           desc={
             ind.bollinger.available && ind.bollinger.lower != null && ind.bollinger.upper != null && ind.bollinger.width != null
-              ? `${formatPrice(ind.bollinger.lower)} — ${formatPrice(ind.bollinger.upper)} · Width: ${(ind.bollinger.width * 10000).toFixed(1)} pips`
+              ? `${formatPairPrice(ind.symbol, ind.bollinger.lower)} — ${formatPairPrice(ind.symbol, ind.bollinger.upper)} · Width: ${priceDeltaToPips(ind.symbol, ind.bollinger.width).toFixed(1)} pips`
               : 'No data'
           }
           unavailable={!ind.bollinger.available}
@@ -233,7 +234,7 @@ export default function IndicatorPanel({ indicators: ind }: IndicatorPanelProps)
           label="ATR (14)"
           value={
             ind.atr.available && ind.atr.value != null && ind.atr.pips != null
-              ? `${formatPrice(ind.atr.value)} (${ind.atr.pips} pips)`
+              ? `${formatPairPrice(ind.symbol, ind.atr.value)} (${ind.atr.pips} pips)`
               : '—'
           }
           signal="NEUTRAL"
@@ -258,7 +259,7 @@ export default function IndicatorPanel({ indicators: ind }: IndicatorPanelProps)
             ].map(({ label, value, color, bold }) => (
               <div key={label} className="bg-background border border-border rounded-lg p-3 text-center">
                 <p className={cn('text-xs font-semibold mb-1', color)}>{label}</p>
-                <p className={cn('font-mono text-sm', color, bold && 'font-bold text-base')}>{formatPrice(value)}</p>
+                <p className={cn('font-mono text-sm', color, bold && 'font-bold text-base')}>{formatPairPrice(ind.symbol, value)}</p>
               </div>
             ))}
           </div>
@@ -273,7 +274,7 @@ export default function IndicatorPanel({ indicators: ind }: IndicatorPanelProps)
             <p className="text-success text-xs font-semibold mb-2">SUPPORT</p>
             {ind.support_resistance.support.length > 0
               ? ind.support_resistance.support.map((s, i) => (
-                  <p key={i} className="text-white font-mono text-sm py-0.5">{formatPrice(s)}</p>
+                  <p key={i} className="text-white font-mono text-sm py-0.5">{formatPairPrice(ind.symbol, s)}</p>
                 ))
               : <p className="text-text-secondary text-sm">—</p>
             }
@@ -282,7 +283,7 @@ export default function IndicatorPanel({ indicators: ind }: IndicatorPanelProps)
             <p className="text-danger text-xs font-semibold mb-2">RESISTANCE</p>
             {ind.support_resistance.resistance.length > 0
               ? ind.support_resistance.resistance.map((r, i) => (
-                  <p key={i} className="text-white font-mono text-sm py-0.5">{formatPrice(r)}</p>
+                  <p key={i} className="text-white font-mono text-sm py-0.5">{formatPairPrice(ind.symbol, r)}</p>
                 ))
               : <p className="text-text-secondary text-sm">—</p>
             }
@@ -292,7 +293,7 @@ export default function IndicatorPanel({ indicators: ind }: IndicatorPanelProps)
           {Object.entries(ind.fibonacci.levels).map(([level, price]) => (
             <div key={level} className="bg-background border border-border rounded p-2 text-center">
               <p className="text-text-secondary text-xs">{level}%</p>
-              <p className="text-white font-mono text-xs">{formatPrice(price)}</p>
+              <p className="text-white font-mono text-xs">{formatPairPrice(ind.symbol, price)}</p>
             </div>
           ))}
         </div>
