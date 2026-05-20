@@ -11,6 +11,7 @@ import StrategyPerformance from '@/components/signals/StrategyPerformance';
 import PairSelector from '@/components/dashboard/PairSelector';
 import MultiPairOverview from '@/components/dashboard/MultiPairOverview';
 import MarketFocus from '@/components/dashboard/MarketFocus';
+import CurrencyStrength from '@/components/dashboard/CurrencyStrength';
 import TradingChart from '@/components/dashboard/TradingChart';
 import CollapsibleSection from '@/components/layout/CollapsibleSection';
 import { useSignals } from '@/hooks/useSignals';
@@ -48,6 +49,11 @@ export default function SignalsPage() {
             trader always sees session + news context first. */}
         <ErrorBoundary>
           <MarketFocus />
+        </ErrorBoundary>
+
+        {/* Currency strength — directional bias across all currencies */}
+        <ErrorBoundary>
+          <CurrencyStrength />
         </ErrorBoundary>
 
         {/* Multi-pair scoreboard — click a row to drill in */}

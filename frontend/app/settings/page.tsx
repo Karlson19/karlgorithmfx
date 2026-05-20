@@ -12,6 +12,8 @@ export default function SettingsPage() {
   const [balance, setBalance]   = useState(String(prefs.account_balance));
   const [riskPct, setRiskPct]   = useState(String(prefs.default_risk_pct));
   const [defaultSym, setDefaultSym] = useState(prefs.default_symbol);
+  const [maxDailyLoss, setMaxDailyLoss] = useState(String(prefs.max_daily_loss_usd));
+  const [maxOpenPositions, setMaxOpenPositions] = useState(String(prefs.max_concurrent_positions));
   const [saved, setSaved] = useState(false);
 
   function handleSave() {
@@ -19,10 +21,14 @@ export default function SettingsPage() {
     const risk = parseFloat(riskPct);
     if (!isFinite(bal) || bal <= 0) return;
     if (!isFinite(risk) || risk <= 0 || risk > 10) return;
+    const mdl = parseFloat(maxDailyLoss);
+    const mop = parseInt(maxOpenPositions);
     setPrefs({
       account_balance: bal,
       default_risk_pct: risk,
       default_symbol: defaultSym,
+      max_daily_loss_usd: isFinite(mdl) && mdl >= 0 ? mdl : 0,
+      max_concurrent_positions: isFinite(mop) && mop >= 0 ? mop : 0,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -75,6 +81,40 @@ export default function SettingsPage() {
               </select>
               <p className="text-text-secondary text-xs mt-1">Which pair loads first on the dashboard / signals pages.</p>
             </div>
+            {/* ── Risk circuit-breakers ── */}
+            <div className="pt-3 border-t border-border space-y-4">
+              <div>
+                <p className="text-white font-semibold text-sm">Risk Protection</p>
+                <p className="text-text-secondary text-xs mt-0.5">
+                  Hard limits enforced by the backend before logging a new trade. Set to 0 to disable.
+                </p>
+              </div>
+              <div>
+                <label className="text-text-secondary text-sm mb-1 block">Max Daily Loss (USD)</label>
+                <input
+                  type="number" min="0" step="10"
+                  value={maxDailyLoss}
+                  onChange={e => setMaxDailyLoss(e.target.value)}
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-white font-mono focus:border-accent outline-none"
+                />
+                <p className="text-text-secondary text-xs mt-1">
+                  When today&apos;s closed-trade P&amp;L hits -$X, new trades are blocked until UTC midnight. Typical: 2-3% of balance.
+                </p>
+              </div>
+              <div>
+                <label className="text-text-secondary text-sm mb-1 block">Max Concurrent Positions</label>
+                <input
+                  type="number" min="0" step="1"
+                  value={maxOpenPositions}
+                  onChange={e => setMaxOpenPositions(e.target.value)}
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2.5 text-white font-mono focus:border-accent outline-none"
+                />
+                <p className="text-text-secondary text-xs mt-1">
+                  Refuses to log a new trade if you already have N open. Typical: 2-3 to avoid overexposure.
+                </p>
+              </div>
+            </div>
+
             <div>
               <label className="text-text-secondary text-sm mb-1 block">Logged In As</label>
               <p className="text-white">{user?.email || 'Not signed in'}</p>

@@ -130,6 +130,59 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+// ─── Risk circuit-breakers ───────────────────────────────────────────────────
+// Called before inserting a new trade. Enforces user-configured limits:
+//   - max_concurrent_positions: hard cap on number of simultaneously-open
+//     trades (counts only status='open'). 0 = disabled.
+//   - max_daily_loss_usd: hard cap on accumulated negative P&L for the
+//     current UTC day. Once breached, no new trades until UTC midnight.
+//     0 = disabled.
+//
+// max_daily_loss_usd / max_concurrent_positions are sent in the request
+// body (frontend pulls them from user prefs) since the backend doesn't
+// otherwise know the user's preferences. They're advisory limits the user
+// controls.
+async function checkRiskLimits(userId, { max_daily_loss_usd, max_concurrent_positions }) {
+  // Max concurrent positions
+  if (max_concurrent_positions > 0) {
+    const { count, error } = await supabase
+      .from('trades')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('status', 'open');
+    if (!error && (count || 0) >= max_concurrent_positions) {
+      return {
+        ok: false, reason: 'max_positions',
+        message: `You already have ${count} open positions (limit ${max_concurrent_positions}). Close one before opening another.`,
+      };
+    }
+  }
+
+  // Daily loss limit (UTC day)
+  if (max_daily_loss_usd > 0) {
+    const utcMidnight = new Date();
+    utcMidnight.setUTCHours(0, 0, 0, 0);
+    const { data, error } = await supabase
+      .from('trades')
+      .select('profit_loss')
+      .eq('user_id', userId)
+      .eq('status', 'closed')
+      .gte('closed_at', utcMidnight.toISOString());
+    if (!error && Array.isArray(data)) {
+      const todayPnL = data.reduce((s, t) => s + (parseFloat(t.profit_loss) || 0), 0);
+      // Negative P&L exceeding the loss limit blocks new trades
+      if (todayPnL <= -Math.abs(max_daily_loss_usd)) {
+        return {
+          ok: false, reason: 'daily_loss',
+          message: `Daily loss limit hit (P&L today: $${todayPnL.toFixed(2)}, limit -$${max_daily_loss_usd}). No new trades until 00:00 UTC.`,
+        };
+      }
+    }
+  }
+
+  return { ok: true };
+}
+
 // ─── POST /api/journal — log trade ────────────────────────────────────────────
 router.post('/', async (req, res) => {
   try {
@@ -148,6 +201,9 @@ router.post('/', async (req, res) => {
       notes,
       status,
       close_price,
+      // Risk-limit prefs forwarded by the frontend
+      max_daily_loss_usd,
+      max_concurrent_positions,
     } = req.body;
 
     // Validate pair against the config — never accept an unknown symbol.
@@ -160,6 +216,20 @@ router.post('/', async (req, res) => {
     // Validate direction
     if (direction !== 'BUY' && direction !== 'SELL') {
       return res.status(400).json({ error: 'direction must be BUY or SELL' });
+    }
+
+    // Risk circuit-breakers — only applied when opening a fresh position
+    // (not when logging a trade that's already closed for historical record).
+    if (status !== 'closed') {
+      const limits = await checkRiskLimits(user.id, {
+        max_daily_loss_usd: parseFloat(max_daily_loss_usd) || 0,
+        max_concurrent_positions: parseInt(max_concurrent_positions) || 0,
+      });
+      if (!limits.ok) {
+        return res.status(422).json({
+          error: limits.message, reason: limits.reason,
+        });
+      }
     }
 
     // Pair-aware P&L computation if closed at insert time

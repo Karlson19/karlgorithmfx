@@ -559,6 +559,63 @@ function newsFade(ctx) {
 }
 
 // ─── Registry ────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+//  STRATEGY 9: RSI Divergence Reversal
+// ═══════════════════════════════════════════════════════════════════════════
+//  Idea: when price prints a new extreme (lower low / higher high) but RSI
+//  does NOT, momentum is exhausting → counter-trend reversal entry.
+//  Bullish divergence → BUY. Bearish → SELL.
+//
+//  Requires the divergenceService to have detected one. The divergence is
+//  computed on the H1 candles passed in through ctx.candles. (Higher-TF
+//  divergence — H4 — is added as a confluence bonus elsewhere.)
+const { detectDivergence } = require('./divergenceService');
+
+function divergenceReversal(ctx) {
+  const { ind, candles, session } = ctx;
+  // Works in any regime but most reliable when ADX is moderate (trend has
+  // had room to extend but isn't accelerating).
+  const adxVal = ind.adx && ind.adx.available ? ind.adx.value : null;
+  const regime_fit = adxVal !== null && adxVal >= 18 && adxVal <= 35;
+  const session_fit = ['LONDON', 'NEW_YORK', 'LONDON_NY_OVERLAP'].includes(session.label);
+
+  const div = detectDivergence(candles, 30);
+  let direction = null;
+  if (div.type === 'bullish') direction = 'BUY';
+  else if (div.type === 'bearish') direction = 'SELL';
+
+  const conditions = [
+    { name: 'Divergence detected on H1', met: div.type !== null, weight: 2, required: true },
+    { name: 'Divergence strength ≥ 0.3', met: div.strength >= 0.3, weight: 1, required: true },
+    { name: 'RSI at extreme aligned with reversal', met: ind.rsi.available && (
+        (direction === 'BUY'  && ind.rsi.value <= 35) ||
+        (direction === 'SELL' && ind.rsi.value >= 65)
+      ), weight: 1.2, required: false },
+    { name: 'ADX moderate (18-35) — trend not accelerating', met: regime_fit, weight: 1, required: false },
+    { name: 'H4 bias agrees with divergence (counter-H1-trend)', met:
+        (direction === 'BUY'  && (ind.mtf.h4_bias === 'BUY' || ind.mtf.h4_bias === 'NEUTRAL')) ||
+        (direction === 'SELL' && (ind.mtf.h4_bias === 'SELL' || ind.mtf.h4_bias === 'NEUTRAL')),
+      weight: 1, required: false },
+  ];
+
+  const result = buildResult({
+    name: 'RSI Divergence Reversal',
+    description: div.type
+      ? `${div.type === 'bullish' ? 'Bullish' : 'Bearish'} RSI divergence — momentum exhausting`
+      : 'Awaiting RSI divergence pattern',
+    applicable: div.type !== null && direction !== null,
+    direction,
+    conditions,
+    regime_fit,
+    session_fit,
+  });
+  if (div.type) result.context = {
+    div_type: div.type, strength: parseFloat(div.strength.toFixed(2)),
+    rsi_change: div.rsi_change,
+  };
+  return result;
+}
+
 const STRATEGIES = [
   emaPullback,
   asianRangeBreakout,
@@ -568,6 +625,7 @@ const STRATEGIES = [
   mtfConfluence,
   pivotReaction,
   newsFade,
+  divergenceReversal,
 ];
 
 // Run every strategy and return:

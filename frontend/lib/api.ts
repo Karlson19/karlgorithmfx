@@ -101,6 +101,11 @@ const api = {
     return res.data;
   },
 
+  async getCurrencyStrength() {
+    const res = await axios.get(`${BASE_URL}/api/market/strength`);
+    return res.data;
+  },
+
   // ── Health ─────────────────────────────────────────────────────────────────
   async getHealth() {
     const res = await axios.get(`${BASE_URL}/api/health`);

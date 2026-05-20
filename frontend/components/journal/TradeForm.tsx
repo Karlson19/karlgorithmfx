@@ -9,6 +9,9 @@ import {
   pipsBetween, recommendedLotSize, pnlUsd,
 } from '@/lib/pairs';
 import { useUserPrefs } from '@/hooks/useUserPrefs';
+import { analyseExposure } from '@/lib/correlations';
+import { Trade } from '@/types';
+import { AlertTriangle } from 'lucide-react';
 
 const STRATEGIES = [
   'EMA Pullback', 'Asian Range Breakout', 'Bollinger Squeeze Breakout',
@@ -66,6 +69,22 @@ export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultA
   // (Settings page) and the optional defaultAccountBalance prop wins if passed.
   const [accountBal, setAccountBal] = useState(defaultAccountBalance ?? prefs.account_balance);
   const [riskPct, setRiskPct] = useState(prefs.default_risk_pct);
+
+  // Existing open positions for the correlation warning. Fetched once on
+  // mount — refreshing would only matter mid-form, which is rare.
+  const [openTrades, setOpenTrades] = useState<Trade[]>([]);
+  useEffect(() => {
+    api.getTrades()
+      .then((trades: Trade[]) => setOpenTrades((trades || []).filter(t => t.status === 'open' && t.id !== trade?.id)))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Correlation analysis updates as the user toggles pair/direction
+  const exposure = useMemo(
+    () => analyseExposure(pair, direction, openTrades.map(t => ({ pair: t.pair, direction: t.direction }))),
+    [pair, direction, openTrades]
+  );
 
   const pairMeta = getPair(pair);
 
@@ -141,7 +160,7 @@ export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultA
     setError('');
     setSaving(true);
     try {
-      const payload: TradePayload = {
+      const payload: TradePayload & { max_daily_loss_usd?: number; max_concurrent_positions?: number } = {
         pair,
         signal_id: signalId,
         direction,
@@ -153,6 +172,10 @@ export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultA
         strategy: strategy || null,
         notes: notes || null,
         status,
+        // Forward the user's configured risk limits so the backend can
+        // enforce them before inserting. Disabled (0) → backend skips.
+        max_daily_loss_usd: prefs.max_daily_loss_usd,
+        max_concurrent_positions: prefs.max_concurrent_positions,
       };
 
       if (trade?.id) {
@@ -162,7 +185,13 @@ export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultA
       }
       onSave();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save trade');
+      // Backend returns 422 with a clear error message for risk-limit
+      // breaches — surface it to the user instead of a generic 'failed'.
+      const e = err as { response?: { status?: number; data?: { error?: string } }; message?: string };
+      const status = e?.response?.status;
+      const backendMsg = e?.response?.data?.error;
+      if (status === 422 && backendMsg) setError(backendMsg);
+      else setError(backendMsg || e?.message || 'Failed to save trade');
     } finally {
       setSaving(false);
     }
@@ -355,6 +384,36 @@ export default function TradeForm({ onClose, onSave, trade, fromSignal, defaultA
             <div className="flex items-center gap-2 px-3 py-2 bg-accent/10 border border-accent/30 rounded text-xs">
               <Sparkles className="w-3.5 h-3.5 text-accent" />
               <span className="text-text-secondary">This trade is linked to signal <span className="text-accent font-mono">{signalId.slice(0, 8)}…</span></span>
+            </div>
+          )}
+
+          {/* Correlation warning — alerts the user when opening this trade
+              materially compounds risk via existing open positions. */}
+          {exposure.warning_level !== 'none' && status !== 'closed' && (
+            <div className={cn('px-3 py-2.5 rounded-lg border flex items-start gap-2 text-xs',
+              exposure.warning_level === 'critical' ? 'bg-danger/10 border-danger/40 text-danger'
+              : exposure.warning_level === 'high'   ? 'bg-danger/5 border-danger/30 text-danger'
+              : exposure.warning_level === 'medium' ? 'bg-yellow-400/10 border-yellow-400/30 text-yellow-400'
+              : 'bg-yellow-400/5 border-yellow-400/20 text-yellow-400'
+            )}>
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-semibold">
+                  Correlated exposure: effective {exposure.effective_multiplier.toFixed(1)}× one trade
+                </p>
+                <ul className="text-text-secondary space-y-0.5">
+                  {exposure.contributions.map((c, i) => (
+                    <li key={i}>
+                      {c.contribution > 0 ? '+' : ''}{c.contribution.toFixed(2)} from {c.direction} {c.symbol} (corr {c.correlation.toFixed(2)})
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-text-secondary">
+                  {exposure.warning_level === 'critical'
+                    ? 'You are essentially doubling-up the same trade. Consider closing the existing positions first OR not taking this one.'
+                    : 'Your risk is amplified by your existing book. Consider sizing this trade down, OR sit it out.'}
+                </p>
+              </div>
             </div>
           )}
 
