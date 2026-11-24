@@ -118,11 +118,12 @@ export default function SignalCard({ signal }: { signal: Signal }) {
             {cal.calibrated ? (
               <>
                 <span className="text-white font-semibold">{cal.win_rate}% historical win rate</span>
+                {cal.avg_r != null && <> · <span className="text-white font-semibold">{cal.avg_r > 0 ? '+' : ''}{cal.avg_r}R avg after spread</span></>}
                 {' '}in this confidence band on this pair ({cal.sample_size} closed signals)
               </>
             ) : (
               <>
-                Confidence band not yet calibrated ({cal.sample_size} closed signals so far). Need ≥8 for trustable rate.
+                Confidence band not yet calibrated ({cal.sample_size} closed signals so far). Need ≥30 for a trustable rate.
               </>
             )}
           </div>

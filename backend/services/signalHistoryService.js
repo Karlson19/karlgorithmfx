@@ -1,17 +1,51 @@
 const supabase = require('../db/supabase');
 const priceService = require('./priceService');
 const { listEnabledSymbols, PRIMARY_SYMBOL } = require('../config/pairs');
+const { dedupeSignals, HOUR_MS } = require('../utils/dedupe');
+const { MIN_SAMPLES } = require('./calibrationService');
 
 // ─── Save a new signal to Supabase ───────────────────────────────────────────
 // Now persists the `symbol` column. Legacy rows without symbol are treated
 // as EUR/USD by all readers (see the COALESCE in stats queries).
-async function saveSignal(signal) {
+// De-duplication: signals are rebuilt every few minutes from the same closed
+// H1 candle, so the same setup used to be stored several times per hour. We now
+// keep ONE row per (symbol, direction, UTC hour). `savedThisHour` is a fast
+// in-process guard (also closes the race between the cron and API routes); the
+// database check covers server restarts.
+const savedThisHour = new Map(); // key -> hour bucket
+
+// `shadow: true` stores the signal in `shadow_signals` instead: setups the
+// calibration gate blocked. They are tracked (never shown or alerted) so a
+// blocked confidence band keeps collecting data and can re-open.
+async function saveSignal(signal, { shadow = false } = {}) {
   if (signal.direction === 'NEUTRAL') return null;
 
+  const table = shadow ? 'shadow_signals' : 'signals';
+  const symbol = signal.symbol || PRIMARY_SYMBOL;
+  const bucket = Math.floor(Date.now() / HOUR_MS);
+  const key = `${table}|${symbol}|${signal.direction}`;
+
+  for (const [k, b] of savedThisHour) if (b !== bucket) savedThisHour.delete(k);
+  if (savedThisHour.get(key) === bucket) return null;
+  savedThisHour.set(key, bucket); // claim before any await so concurrent calls bail out
+
+  const { data: existing, error: lookupErr } = await supabase
+    .from(table)
+    .select('id')
+    .eq('symbol', symbol)
+    .eq('direction', signal.direction)
+    .gte('created_at', new Date(bucket * HOUR_MS).toISOString())
+    .limit(1);
+  if (lookupErr) {
+    console.warn(`saveSignal dedupe lookup failed on ${table}:`, lookupErr.message);
+  } else if (existing && existing.length > 0) {
+    return null; // already stored this hour
+  }
+
   const { data, error } = await supabase
-    .from('signals')
+    .from(table)
     .insert({
-      symbol: signal.symbol || PRIMARY_SYMBOL,
+      symbol,
       direction: signal.direction,
       entry: signal.entry,
       stop_loss: signal.stop_loss,
@@ -32,7 +66,8 @@ async function saveSignal(signal) {
     .single();
 
   if (error) {
-    console.error('saveSignal error:', error.message);
+    savedThisHour.delete(key); // let the next run retry
+    console.error(`saveSignal error (${table}):`, error.message);
     return null;
   }
   return data;
@@ -95,7 +130,7 @@ async function determineOutcomeFromCandles(sig, candles) {
 
 // Worker: take a list of signals and decide outcomes for each by candle-walk.
 // Persists the decision. Returns counts for logging.
-async function processSignalBatch(signals) {
+async function processSignalBatch(signals, table = 'signals') {
   if (!signals || signals.length === 0) return { total: 0, decided: 0, expired: 0 };
 
   // Group signals by symbol so we only fetch candles once per pair.
@@ -135,7 +170,7 @@ async function processSignalBatch(signals) {
 
     if (result) {
       await supabase
-        .from('signals')
+        .from(table)
         .update({
           outcome: result.outcome,
           outcome_price: result.outcome_price,
@@ -147,7 +182,7 @@ async function processSignalBatch(signals) {
       // No level was ever hit AND the signal has aged out → expire it.
       // outcome_price stays null (no actual hit price).
       await supabase
-        .from('signals')
+        .from(table)
         .update({
           outcome: 'EXPIRED',
           outcome_price: null,
@@ -167,16 +202,19 @@ async function evaluateOpenSignals() {
   // Only consider signals at least 15 min old so we have at least one full
   // M15 candle since they were generated.
   const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-  const { data: openSignals, error } = await supabase
-    .from('signals')
-    .select('*')
-    .is('outcome', null)
-    .lt('created_at', cutoff);
+  // `shadow_signals` is optional (migration 004); a missing table just yields no rows.
+  for (const table of ['signals', 'shadow_signals']) {
+    const { data: openSignals, error } = await supabase
+      .from(table)
+      .select('*')
+      .is('outcome', null)
+      .lt('created_at', cutoff);
 
-  if (error || !openSignals || openSignals.length === 0) return;
-  const result = await processSignalBatch(openSignals);
-  if (result.decided > 0 || result.expired > 0) {
-    console.log(`[evaluateOpenSignals] processed ${result.total}: ${result.decided} decided, ${result.expired} expired`);
+    if (error || !openSignals || openSignals.length === 0) continue;
+    const result = await processSignalBatch(openSignals, table);
+    if (result.decided > 0 || result.expired > 0) {
+      console.log(`[evaluateOpenSignals:${table}] processed ${result.total}: ${result.decided} decided, ${result.expired} expired`);
+    }
   }
 }
 
@@ -249,13 +287,14 @@ function computeStats(rows) {
 async function getSignalStats(symbol = null) {
   let query = supabase
     .from('signals')
-    .select('symbol, direction, confidence, outcome')
+    .select('symbol, direction, confidence, outcome, created_at')
     .not('outcome', 'is', null)
     .neq('outcome', 'EXPIRED');
   if (symbol) query = query.eq('symbol', symbol);
 
-  const { data, error } = await query;
-  if (error || !data) return { ...emptyStats(), per_pair: {} };
+  const { data: raw, error } = await query;
+  if (error || !raw) return { ...emptyStats(), per_pair: {} };
+  const data = dedupeSignals(raw); // one signal per symbol/direction/hour
 
   const overall = computeStats(data);
 
@@ -278,14 +317,15 @@ async function getSignalStats(symbol = null) {
 // Phase 4 migration). Tells you which named strategies actually work for
 // each pair — the single most useful "is this system worth trusting" stat.
 async function getStrategyStats() {
-  const { data, error } = await supabase
+  const { data: raw, error } = await supabase
     .from('signals')
-    .select('symbol, fired_strategy_name, confidence, outcome')
+    .select('symbol, direction, fired_strategy_name, confidence, outcome, created_at')
     .not('outcome', 'is', null)
     .neq('outcome', 'EXPIRED')
     .not('fired_strategy_name', 'is', null);
 
-  if (error || !data) return { strategies: [], by_pair: {} };
+  if (error || !raw) return { strategies: [], by_pair: {} };
+  const data = dedupeSignals(raw); // one signal per symbol/direction/hour
 
   // Aggregate cross-pair per strategy
   const byStrat = {};
@@ -329,7 +369,7 @@ async function getStrategyStats() {
     })).sort((a, b) => b.total - a.total);
   }
 
-  return { strategies, by_pair, min_samples: 8 };
+  return { strategies, by_pair, min_samples: MIN_SAMPLES };
 }
 
 module.exports = {
