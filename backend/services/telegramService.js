@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { resultInR } = require('./calibrationService');
+const { sizingLines } = require('../utils/positionSizing');
 
 // ─── Telegram alerts ─────────────────────────────────────────────────────────
 // Sends new signals and their outcomes to your own Telegram chat.
@@ -11,6 +12,10 @@ const { resultInR } = require('./calibrationService');
 //   TELEGRAM_MIN_CONFIDENCE     only alert signals at or above this confidence (default 0)
 //   TELEGRAM_OUTCOMES           set to "false" to skip win/loss messages
 //   TELEGRAM_STARTUP_MESSAGE    set to "true" once to get a test message on boot
+//   TELEGRAM_USER_ID            only send close/hold alerts for this app user's trades (default: all)
+//   ACCOUNT_BALANCE_USD         your balance; adds a position-size line (or a TOO BIG warning) to signals
+//   RISK_PER_TRADE_PCT          max % of balance to risk per trade (default 2)
+//   ACCOUNT_TYPE                "standard" (default) or "cent"
 //
 // With no token/chat id set, every function here silently does nothing.
 // Alerts are best-effort: a Telegram failure never affects signal generation.
@@ -55,8 +60,10 @@ function formatSignal(s) {
     `R:R ${num(s.risk_reward)}  |  Confidence ${num(s.confidence)}%  |  ${s.timeframe || 'H1'}${s.session ? '  |  ' + s.session : ''}`,
     s.strategy ? `Strategy: ${s.strategy}` : null,
     calLine,
+    sizingLines(s),
     '',
-    'Check the live price and spread on Exness first. The entry is the last closed H1 candle and can be stale. Skip it if price has already moved toward the target. Risk 1% max.',
+    'Check the live price and spread on Exness first. The entry is the last closed H1 candle and can be stale. Skip it if price has already moved toward the target.',
+    'If you take it, log the trade in the app so you get close/hold alerts here.',
   ].filter((l) => l !== null).join('\n');
 }
 
@@ -89,4 +96,33 @@ async function notifyStartup() {
   return sendMessage('KarlgorithmFX backend started. Telegram alerts are working. Remove TELEGRAM_STARTUP_MESSAGE to stop this message.');
 }
 
-module.exports = { enabled, sendMessage, notifySignal, notifyOutcome, notifyStartup, formatSignal, formatOutcome };
+// ─── Open-trade alerts (when to close / move the stop) ───────────────────────
+const ACTION_TEXT = {
+  CLOSE_OR_MOVE_SL_NOW: 'Close now, or move your stop to lock in profit.',
+  MOVE_SL_TO_BE: 'Move your stop to your entry price (break-even).',
+  CLOSE_PARTIAL_TRAIL: 'TP1 reached: close part of the trade and trail the rest, or close it all.',
+  TIGHTEN_SL_OR_CLOSE: 'Tighten your stop, or close.',
+  TIGHTEN_SL_OR_MONITOR: 'Tighten your stop and watch it closely.',
+  PROTECT_BEFORE_NEWS: 'Protect the trade before the news: tighten the stop or close.',
+};
+
+// Only alerts worth interrupting you for: critical, warning, and TP1 reached.
+function isActionable(a) {
+  return a.severity === 'critical' || a.severity === 'warning' || a.type === 'TP1_HIT';
+}
+
+function formatTradeAlert(a) {
+  const icon = a.severity === 'critical' ? '🚨' : a.severity === 'warning' ? '⚠️' : '✅';
+  const todo = ACTION_TEXT[a.suggested_action] || a.suggested_action;
+  return [`${icon} ${a.title}`, a.message, todo ? `Do this: ${todo}` : null].filter(Boolean).join('\n');
+}
+
+async function notifyTradeAlert(a) {
+  if (!enabled() || !isActionable(a)) return false;
+  return sendMessage(formatTradeAlert(a));
+}
+
+module.exports = {
+  enabled, sendMessage, notifySignal, notifyOutcome, notifyStartup, notifyTradeAlert,
+  isActionable, formatSignal, formatOutcome, formatTradeAlert,
+};

@@ -337,6 +337,13 @@ async function fetchOpenTrades(userId) {
   return data;
 }
 
+// Users that currently have at least one open trade (used by the Telegram monitor).
+async function listUsersWithOpenTrades() {
+  const { data, error } = await supabase.from('trades').select('user_id').eq('status', 'open');
+  if (error || !data) return [];
+  return Array.from(new Set(data.map(r => r.user_id).filter(Boolean)));
+}
+
 // ─── Flat alerts list (for the floating panel) ───────────────────────────────
 async function analyseOpenTrades(userId) {
   const openTrades = await fetchOpenTrades(userId);
@@ -419,6 +426,7 @@ async function getMonitorSnapshot(userId) {
 
 module.exports = {
   analyseOpenTrades,
+  listUsersWithOpenTrades,
   getMonitorSnapshot,
   resetPeak,
   unrealizedPnL,
