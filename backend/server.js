@@ -21,6 +21,7 @@ const signalHistoryService = require('./services/signalHistoryService');
 const calibration = require('./services/calibrationService');
 const tradeMonitor = require('./services/tradeMonitorService');
 const pushService = require('./services/pushService');
+const telegramMonitor = require('./services/telegramMonitor');
 const cache = require('./utils/cache');
 const websocketService = require('./services/websocketService');
 const { listEnabledSymbols, PRIMARY_SYMBOL } = require('./config/pairs');
@@ -143,6 +144,12 @@ cron.schedule('*/3 * * * *', async () => {
   } catch (err) {
     console.error('Cron push error:', err.message);
   }
+});
+
+// Telegram close/hold alerts: every minute, and only does work while a trade
+// is open in the journal (see services/telegramMonitor.js).
+cron.schedule('* * * * *', () => {
+  telegramMonitor.runOnce().catch(err => console.error('Telegram monitor error:', err.message));
 });
 
 const PORT = process.env.PORT || 4000;
