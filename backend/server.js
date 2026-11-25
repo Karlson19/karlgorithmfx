@@ -154,4 +154,5 @@ server.listen(PORT, () => {
     .catch(err => console.error('Initial price fetch failed:', err.message));
   calibration.refreshCalibration()
     .catch(err => console.error('Initial calibration load failed:', err.message));
+  require('./services/telegramService').notifyStartup();
 });

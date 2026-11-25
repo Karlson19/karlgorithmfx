@@ -3,6 +3,7 @@ const priceService = require('./priceService');
 const { listEnabledSymbols, PRIMARY_SYMBOL } = require('../config/pairs');
 const { dedupeSignals, HOUR_MS } = require('../utils/dedupe');
 const { MIN_SAMPLES } = require('./calibrationService');
+const telegram = require('./telegramService');
 
 // ─── Save a new signal to Supabase ───────────────────────────────────────────
 // Now persists the `symbol` column. Legacy rows without symbol are treated
@@ -156,6 +157,7 @@ async function processSignalBatch(signals, table = 'signals') {
 
   let decided = 0;
   let expired = 0;
+  const settled = []; // [{ sig, outcome }] so callers can alert on fresh results
 
   for (const sig of signals) {
     const sym = sig.symbol || PRIMARY_SYMBOL;
@@ -177,6 +179,7 @@ async function processSignalBatch(signals, table = 'signals') {
           outcome_at: new Date(result.outcome_at_sec * 1000).toISOString(),
         })
         .eq('id', sig.id);
+      settled.push({ sig, outcome: result.outcome });
       decided++;
     } else if (ageHours > 24) {
       // No level was ever hit AND the signal has aged out → expire it.
@@ -194,7 +197,7 @@ async function processSignalBatch(signals, table = 'signals') {
     // else: still open, leave alone — next run will try again.
   }
 
-  return { total: signals.length, decided, expired };
+  return { total: signals.length, decided, expired, settled };
 }
 
 // ─── Cron-callable: evaluate open signals ────────────────────────────────────
@@ -212,6 +215,9 @@ async function evaluateOpenSignals() {
 
     if (error || !openSignals || openSignals.length === 0) continue;
     const result = await processSignalBatch(openSignals, table);
+    if (table === 'signals') { // shadow signals are never alerted
+      for (const { sig, outcome } of result.settled) telegram.notifyOutcome(sig, outcome);
+    }
     if (result.decided > 0 || result.expired > 0) {
       console.log(`[evaluateOpenSignals:${table}] processed ${result.total}: ${result.decided} decided, ${result.expired} expired`);
     }
