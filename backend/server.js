@@ -162,4 +162,5 @@ server.listen(PORT, () => {
   calibration.refreshCalibration()
     .catch(err => console.error('Initial calibration load failed:', err.message));
   require('./services/telegramService').notifyStartup();
+  require('./services/backtestLauncher').maybeRun();
 });
