@@ -21,6 +21,7 @@ const signalHistoryService = require('./services/signalHistoryService');
 const calibration = require('./services/calibrationService');
 const tradeMonitor = require('./services/tradeMonitorService');
 const pushService = require('./services/pushService');
+const telegramMonitor = require('./services/telegramMonitor');
 const cache = require('./utils/cache');
 const websocketService = require('./services/websocketService');
 const { listEnabledSymbols, PRIMARY_SYMBOL } = require('./config/pairs');
@@ -145,6 +146,12 @@ cron.schedule('*/3 * * * *', async () => {
   }
 });
 
+// Telegram close/hold alerts: every minute, and only does work while a trade
+// is open in the journal (see services/telegramMonitor.js).
+cron.schedule('* * * * *', () => {
+  telegramMonitor.runOnce().catch(err => console.error('Telegram monitor error:', err.message));
+});
+
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   console.log(`KarlgorithmFX backend running on port ${PORT}`);
@@ -154,4 +161,5 @@ server.listen(PORT, () => {
     .catch(err => console.error('Initial price fetch failed:', err.message));
   calibration.refreshCalibration()
     .catch(err => console.error('Initial calibration load failed:', err.message));
+  require('./services/telegramService').notifyStartup();
 });

@@ -5,6 +5,7 @@ const calibration = require('./calibrationService');
 const strategies = require('./strategiesService');
 const cache = require('../utils/cache');
 const { saveSignal } = require('./signalHistoryService');
+const telegram = require('./telegramService');
 const { getPair, PRIMARY_SYMBOL } = require('../config/pairs');
 
 // ─── Engine principles (post Phase 2 rewrite) ────────────────────────────────
@@ -545,7 +546,9 @@ async function generateSignal(symbol = PRIMARY_SYMBOL) {
     cache.set(cacheKey, signal,
       Math.min(priceService.secondsUntilCandleClose('1h'), 300));
 
-    saveSignal(signal).catch(err => console.error(`[${sym}] saveSignal error:`, err.message));
+    saveSignal(signal)
+      .then(row => { if (row) telegram.notifySignal(signal); }) // alert once per stored signal, never on duplicates
+      .catch(err => console.error(`[${sym}] saveSignal error:`, err.message));
     return signal;
   } catch (err) {
     console.error(`[${sym}] Signal generation error:`, err.message);
