@@ -37,6 +37,8 @@ export interface CalibrationInfo {
   band: number;
   sample_size: number;
   win_rate?: number;
+  avg_r?: number;
+  lower_r?: number | null;
 }
 
 export interface NewsBlackoutInfo {

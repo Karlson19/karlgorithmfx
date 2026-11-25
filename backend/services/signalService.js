@@ -19,9 +19,12 @@ const { getPair, PRIMARY_SYMBOL } = require('../config/pairs');
 //      VOLATILE → downweight both; require stronger consensus
 // 6. News blackout: HIGH-impact event for either currency of the pair
 //    within ±N minutes → NEUTRAL.
-// 7. Confidence is calibrated against the pair's own historical win rate.
-//    Below MIN_SAMPLES of stored signals in a band, the heuristic floor
-//    applies. With samples, we require ≥ TARGET_WIN_RATE to emit.
+// 7. Confidence is calibrated against the pair's own history, measured as
+//    expectancy in R net of spread (not raw win rate). Below MIN_SAMPLES of
+//    de-duplicated signals in a band, the heuristic floor applies. With
+//    samples, the band must show a positive conservative edge to emit.
+//    Signals the gate blocks are still tracked as shadow signals so a blocked
+//    band can recover (see calibrationService).
 
 const CORE_INDICATORS = [
   'RSI', 'Williams %R', 'CCI', 'Stochastic',
@@ -32,10 +35,6 @@ const CORE_INDICATORS = [
 // Heuristic confidence floor — applies when calibration doesn't yet have
 // enough samples for the band.
 const HEURISTIC_FLOOR = 65;
-
-// Calibrated minimum — once we have samples in a band, require this win
-// rate or higher from our own history.
-const TARGET_WIN_RATE = 55;
 
 // News blackout window in minutes around HIGH-impact events.
 const NEWS_BLACKOUT_MIN = 30;
@@ -411,10 +410,11 @@ async function generateSignal(symbol = PRIMARY_SYMBOL) {
       : { calibrated: false, sample_size: 0 };
 
     // Floor logic:
-    //   - Calibrated band: require historical win rate ≥ TARGET_WIN_RATE
+    //   - Calibrated band: require a positive conservative edge (mean R minus
+    //     one standard error > 0, net of spread)
     //   - Uncalibrated band: fall back to HEURISTIC_FLOOR
     const meetsCalibration = cal.calibrated
-      ? cal.win_rate >= TARGET_WIN_RATE
+      ? calibration.passesGate(cal)
       : confidence >= HEURISTIC_FLOOR;
 
     const blocked = blackout !== null;
@@ -426,7 +426,7 @@ async function generateSignal(symbol = PRIMARY_SYMBOL) {
         : direction === 'NEUTRAL'
           ? 'Mixed signals — no decisive direction'
           : cal.calibrated
-            ? `Historical win rate ${cal.win_rate}% in this band — below target ${TARGET_WIN_RATE}%`
+            ? `No proven edge in this band yet — avg ${cal.avg_r}R after spread over ${cal.sample_size} signals`
             : `Confidence ${confidence}% below floor ${HEURISTIC_FLOOR}%`;
 
       const signal = {
@@ -456,6 +456,31 @@ async function generateSignal(symbol = PRIMARY_SYMBOL) {
         agreeing_indicators,
         abstentions: voteResult.abstentions,
       };
+
+      // Blocked by calibration (not by news, not neutral): keep tracking it as
+      // a shadow signal so this band keeps collecting outcome data.
+      if (direction !== 'NEUTRAL' && !blocked && cal.calibrated && !meetsCalibration) {
+        const lv = calcATRLevels(direction, price, indicators.atr, regime, indicators.support_resistance, pair);
+        const slP = Math.abs(price - lv.stop_loss) / pair.pip_size;
+        const tpP = Math.abs(price - lv.take_profit_1) / pair.pip_size;
+        saveSignal({
+          symbol: sym,
+          direction,
+          entry: parseFloat(price.toFixed(pair.digits)),
+          stop_loss: lv.stop_loss,
+          take_profit_1: lv.take_profit_1,
+          take_profit_2: lv.take_profit_2,
+          confidence,
+          strategy: firedStrategy ? firedStrategy.name : buildStrategyName(indicators, direction, regime),
+          fired_strategy: firedStrategy ? { name: firedStrategy.name } : null,
+          market_condition: regime,
+          timeframe: 'H1',
+          risk_reward: slP > 0 ? `1:${(tpP / slP).toFixed(1)}` : null,
+          indicators_agreeing: agreeing,
+          total_indicators: total,
+        }, { shadow: true }).catch(err => console.error(`[${sym}] shadow save error:`, err.message));
+      }
+
       cache.set(cacheKey, signal,
         Math.min(priceService.secondsUntilCandleClose('1h'), 300));
       return signal;
